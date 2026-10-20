@@ -1,0 +1,36 @@
+# VCS
+.git
+.gitignore
+
+# Editor / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Claude / docs
+.claude
+docs
+*.md
+
+# Build output
+bin
+dist
+*.exe
+*.test
+*.out
+
+# Local dev
+tmp
+logs
+*.log
+coverage.out
+
+# Env / secrets
+.env
+.env.*
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

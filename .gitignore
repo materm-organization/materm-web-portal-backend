@@ -1,0 +1,53 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test / coverage
+*.test
+*.out
+coverage.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor
+vendor/
+
+# Swagger generated docs
+docs/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / tmp
+logs/
+tmp/
+*.log
+
+# Env / secrets
+.env
+.env*
+
+# Key material / credentials (NEVER commit)
+cmd/application/conf/keys/
+*.pem
+*.key
+*firebase*.json
+
+# Local overrides
+config.local.yaml
+
+# graphify output
+graphify-out/

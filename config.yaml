@@ -1,0 +1,80 @@
+server:
+  port:
+  readTimeout:
+  writeTimeout:
+
+database:
+  pool:
+    maxOpenConns:
+    maxIdleConns:
+    connMaxLifetimeMinutes:
+    connMaxIdleTimeMinutes:
+  admin:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+    sslmode:
+    timezone:
+  sell:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+    sslmode:
+    timezone:
+  erp:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+    sslmode:
+    timezone:
+  device:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+
+redis:
+  host:
+  port:
+  username:
+  password:
+  db:
+  clearOnStart:
+
+jwt:
+  secret:
+  refreshSecret:
+
+minio:
+  endpoint:
+  accessKey:
+  secretKey:
+  bucketName:
+  baseUrl:
+
+mailer:
+  host:
+  username:
+  password:
+  port:
+  from:
+
+bootstrap:
+  adminUsername:
+  adminPassword:
+
+# TEMPORARY: kept only because the existing auth module (Keycloak sign-in and
+# /auth/me) still reads it. Remove once auth is rewritten on JWT.
+keycloak:
+  base_url:
+  realm:
+  client_id:
+  client_secret:
+  enabled:

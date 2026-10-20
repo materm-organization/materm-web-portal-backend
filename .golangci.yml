@@ -1,0 +1,58 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # --- Bug prevention ---
+    - errcheck        # unchecked errors
+    - govet           # suspicious constructs (printf format, shadowing, etc.)
+    - staticcheck     # comprehensive static analysis
+    - nilerr          # return nil after checking err != nil
+    - bodyclose       # HTTP response body not closed
+
+    # --- Code quality ---
+    - ineffassign     # variable assigned but never used
+    - unused          # unused code / unexported identifiers
+
+    # --- Context correctness ---
+    - contextcheck    # ensure context is propagated
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # struct padding — too noisy for domain types
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1020
+        - -ST1021
+        - -ST1022
+
+  exclusions:
+    # std-error-handling suppresses defer Body.Close() and other idiomatic patterns
+    presets:
+      - std-error-handling
+
+    rules:
+      # Test files — relax errcheck and contextcheck
+      - path: _test\.go
+        linters:
+          - errcheck
+          - contextcheck
+
+      # Generated swagger docs
+      - path: docs/
+        linters:
+          - all
+
+      # copier.Copy only fails on programmer-error type mismatches, not at runtime
+      - path: (.+)\.go$
+        linters: [errcheck]
+        text: 'Error return value of `copier\.Copy` is not checked'
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5

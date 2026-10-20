@@ -1,0 +1,5 @@
+creation_rules:
+  # Prod environment
+  - path_regex: config.yaml
+    age:
+      - age1465mw0a9jxf2kk5vkmgktnrknlzhgz0uq8qy8x9dzmvq9l9lxa4qz3g796
