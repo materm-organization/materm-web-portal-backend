@@ -7,8 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// JwtAuthCtrl backs /refresh with this app's own encrypted-JWT scheme instead of
-// Keycloak. Standalone alternative to AuthCtrl.RefreshToken — not a replacement.
+// JwtAuthCtrl backs /refresh with this app's own encrypted-JWT scheme.
 // The refresh token is read from the Authorization header (validated up front by
 // the middleware.AccessRefreshToken route guard), not a JSON request body.
 type JwtAuthCtrl interface {

@@ -35,7 +35,7 @@ Each file in `cmd/application/` (`repositories.go`, `services.go`, `controller.g
 
 | File | Purpose |
 |---|---|
-| `env.go` | Loads `config.yaml` via Viper into the typed `Env` struct; exposes `bootstrap.GlobalEnv`. Sections (camelCase keys): `server` (port, readTimeout, writeTimeout), `database` (`pool` + four named PostgreSQL connections `admin`/`sell`/`erp`/`device`; only `admin` is wired, `device` has no sslmode/timezone), `redis`, `jwt` (secret, refreshSecret), `minio`, `mailer`, `bootstrap` (adminUsername/adminPassword) — `minio`, `mailer`, `bootstrap` are parsed only. A **temporary** trailing `keycloak` block (snake_case keys) remains for the existing auth module until it is rewritten on JWT. Timeouts are Go duration strings with a unit (e.g. `30s`) |
+| `env.go` | Loads `config.yaml` via Viper into the typed `Env` struct; exposes `bootstrap.GlobalEnv`. Sections (camelCase keys): `server` (port, readTimeout, writeTimeout), `database` (`pool` + four named PostgreSQL connections `admin`/`sell`/`erp`/`device`; only `admin` is wired, `device` has no sslmode/timezone), `redis`, `jwt` (secret, refreshSecret), `mailer`, `bootstrap` (adminUsername/adminPassword) — `mailer`, `bootstrap` are parsed only. There is no file-store config here yet (the admin backend has `file:`; the portal will need only `file.path_ip` to build public file URLs). Timeouts are Go duration strings with a unit (e.g. `30s`) |
 | `app.go` | Assembles `Application{Env, Fiber, Redis, Swagger}` — Swagger construction is commented out (DB wiring is done in `SetupRepositories`) |
 | `fiber.go` | `NewFiber(ServerConfig)` creates the Fiber app (applies `server.readTimeout`/`writeTimeout` when non-zero) with helmet, logger, recover, CORS, and `dbQueryTimeoutMiddleware` (30s deadline on every request context) |
 | `postgres.go` | `DBConnection.DSN()` builds the libpq DSN (sslmode/timezone omitted when empty); `NewPostgresConnection(conn, pool)` opens one connection and applies `database.pool` (zero values keep database/sql defaults); `Migrate(models...)` wraps `AutoMigrate` and is not called on startup |
@@ -56,7 +56,7 @@ modules/<name>/
   repositories/<name>.repository.go → package repositories  (GORM queries, entities only)
 ```
 
-`auth` currently has only `controller/`, `models/`, `routes/`, `services/` (it is stateless: Keycloak + JWT, no DB tables).
+`auth` currently has only `controller/`, `models/`, `routes/`, `services/` (it is stateless: local JWT, no DB tables).
 
 **Layer contract — strictly enforced:**
 - `repositories` receives and returns **entities only** — never imports `models`
@@ -74,15 +74,14 @@ All other routes are under `/api/v1`. `auth`'s `/signin` and `/refresh` are regi
 
 | Module | Routes |
 |---|---|
-| `auth` | `POST /signin` (Keycloak); `POST /refresh` (local JWT — see Authentication below); `GET /auth/me` (Keycloak) |
+| `auth` | `POST /refresh` (local JWT — see Authentication below) |
 
 ### Authentication
 
 **JWT** — secrets come from `jwt.secret` (access) and `jwt.refreshSecret` (refresh); see `pkg/middleware/jwt_auth_middleware.go` for `AccessToken`/`AccessRefreshToken`/`GetOwnerAccessToken`/`GetInfoAccessToken`.
 
-`POST /refresh` is backed by `JwtAuthCtrl`/`JwtAuthService` — this app's own encrypted-JWT scheme (`middleware.GenerateJWTToken`/`GetOwnerRefresh`), **not** Keycloak. `AuthCtrl.RefreshToken` (the Keycloak-proxying refresh) still exists on `auth.controller.go` but is not wired to any route.
+`POST /refresh` is backed by `JwtAuthCtrl`/`JwtAuthService` — this app's own encrypted-JWT scheme (`middleware.GenerateJWTToken`/`GetOwnerRefresh`). The external OIDC sign-in, `/auth/me`, middleware and config block were removed together with the admin backend's (doc/06 §5.13); nothing in this repo issues the tokens that `/refresh` accepts, so the module is a leftover to drop or rewrite when the portal backend is designed.
 
-**Keycloak OIDC (optional)** — enabled via `keycloak.enabled: true` in config (the `keycloak` block is temporary, until auth is rewritten on JWT); see `pkg/middleware/keycloak_middleware.go` for `KeycloakAuth`/`GetKeycloakClaims`/`RequireRealmRole`. Note `pkg/middleware` imports `modules/auth/models` (Keycloak claim types).
 
 ### Security pattern: identity always comes from the JWT
 
@@ -129,7 +128,7 @@ Parallel DB calls use buffered channels — every channel is buffered to its wri
 | Path | Purpose |
 |---|---|
 | `pkg/cache/` | `RedisRepository` — `Get`, `Set`, `Delete`, `DeleteByPrefix`, `GetClient` |
-| `pkg/middleware/` | Auth (JWT, Keycloak), response helpers, `PageQuery`, `LoadMoreQuery` |
+| `pkg/middleware/` | Auth (local JWT), response helpers, `PageQuery`, `LoadMoreQuery` |
 | `pkg/constants/` | Route constants (`MainRoute`, `HealthCheckRoute`) |
 | `pkg/constants/services/` | `AppKeyPrefix`, `RootKey`, `DBQueryTimeout`, `ExpireTime`, `Keys` struct |
 | `pkg/utilities/convertor/` | Model conversion, JSON↔string helpers |

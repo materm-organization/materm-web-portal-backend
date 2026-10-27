@@ -32,7 +32,9 @@ docs/
 Thumbs.db
 
 # Logs / tmp
-logs/
+# runtime log files (cwd-relative logs/ directories, e.g. from tests); NOT the source package pkg/logs
+/logs/
+**/logs/*.log
 tmp/
 *.log
 

@@ -9,7 +9,7 @@ import (
 )
 
 // Repositories holds shared infrastructure handles. The auth module is
-// stateless (Keycloak/JWT) and uses none of them yet; new modules add their
+// stateless (local JWT) and uses none of them yet; new modules add their
 // repositories here.
 type Repositories struct {
 	postgres  *bootstrap.PostgresConnection

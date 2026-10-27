@@ -8,8 +8,7 @@ import (
 )
 
 // JwtAuthService refreshes tokens using this app's own encrypted-JWT scheme
-// (pkg/middleware) instead of proxying to Keycloak. It is a standalone
-// alternative to AuthService.RefreshToken, not a replacement for it.
+// (pkg/middleware).
 type JwtAuthService interface {
 	RefreshToken(id, role string) (*models.TokenResponse, error)
 }

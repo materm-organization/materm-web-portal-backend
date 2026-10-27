@@ -18,7 +18,7 @@ func SetupRouter(app fiber.Router, c *Controllers) {
 	app.Get(constants.HealthCheckRoute, HealthCheck)
 
 	// Auth routes
-	ar.NewAuthRouter(api, c.AuthController, c.JwtAuthController)
+	ar.NewAuthRouter(api, c.JwtAuthController)
 }
 
 // HealthCheck godoc

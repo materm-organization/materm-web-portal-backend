@@ -15,8 +15,13 @@ func TestDBConnectionDSN(t *testing.T) {
 			SSLMode: "disable", Timezone: "Asia/Vientiane",
 		}
 		assert.Equal(t,
-			`host='db.local' port=5432 user='u' password='p w\'d\\' dbname='app' sslmode='disable' TimeZone='Asia/Vientiane'`,
+			`host='db.local' port=5432 user='u' password='p w\'d\\' dbname='app' sslmode='disable' TimeZone=Asia/Vientiane`,
 			c.DSN())
+	})
+
+	t.Run("odd timezone is quoted", func(t *testing.T) {
+		c := bootstrap.DBConnection{Host: "h", Port: 1, User: "u", Password: "p", DBName: "d", Timezone: "My Zone"}
+		assert.Equal(t, `host='h' port=1 user='u' password='p' dbname='d' TimeZone='My Zone'`, c.DSN())
 	})
 
 	t.Run("device omits sslmode and timezone", func(t *testing.T) {

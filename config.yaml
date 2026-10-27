@@ -52,13 +52,6 @@ jwt:
   secret:
   refreshSecret:
 
-minio:
-  endpoint:
-  accessKey:
-  secretKey:
-  bucketName:
-  baseUrl:
-
 mailer:
   host:
   username:
@@ -69,12 +62,3 @@ mailer:
 bootstrap:
   adminUsername:
   adminPassword:
-
-# TEMPORARY: kept only because the existing auth module (Keycloak sign-in and
-# /auth/me) still reads it. Remove once auth is rewritten on JWT.
-keycloak:
-  base_url:
-  realm:
-  client_id:
-  client_secret:
-  enabled:

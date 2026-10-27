@@ -7,10 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func NewAuthRouter(router fiber.Router, ac controller.AuthCtrl, jwtAc controller.JwtAuthCtrl) {
-	router.Post("/signin", ac.SignIn)
+// NewAuthRouter registers the only auth route that is left: the local-JWT refresh.
+func NewAuthRouter(router fiber.Router, jwtAc controller.JwtAuthCtrl) {
 	router.Post("/refresh", middleware.AccessRefreshToken, jwtAc.RefreshToken)
-	authRouter := router.Group("/auth", middleware.KeycloakAuth)
-
-	authRouter.Get("/me", ac.GetMe)
 }

@@ -1,9 +1,7 @@
 package models
 
 // TokenResponse is the OAuth2-style token pair returned by this app's local JWT
-// refresh flow (pkg/middleware.GenerateJWTToken) — same field shape as
-// KeycloakTokenResponse so the wire contract stays identical regardless of which
-// service backs /refresh.
+// refresh flow (pkg/middleware.GenerateJWTToken).
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`

@@ -15,13 +15,8 @@ type Env struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Redis     RedisConfig     `mapstructure:"redis"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
-	Minio     MinioConfig     `mapstructure:"minio"`
 	Mailer    MailerConfig    `mapstructure:"mailer"`
 	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
-
-	// Keycloak is TEMPORARY: the existing auth module still needs it. Remove
-	// it (and the keycloak block in config.yaml) once auth is rewritten on JWT.
-	Keycloak KeycloakConfig `mapstructure:"keycloak"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -81,15 +76,6 @@ type JWTConfig struct {
 	RefreshSecret string `mapstructure:"refreshSecret"`
 }
 
-// MinioConfig is parsed only; no feature uses it yet.
-type MinioConfig struct {
-	Endpoint   string `mapstructure:"endpoint"`
-	AccessKey  string `mapstructure:"accessKey"`
-	SecretKey  string `mapstructure:"secretKey"`
-	BucketName string `mapstructure:"bucketName"`
-	BaseURL    string `mapstructure:"baseUrl"`
-}
-
 // MailerConfig is parsed only; no feature uses it yet.
 type MailerConfig struct {
 	Host     string `mapstructure:"host"`
@@ -103,15 +89,6 @@ type MailerConfig struct {
 type BootstrapConfig struct {
 	AdminUsername string `mapstructure:"adminUsername"`
 	AdminPassword string `mapstructure:"adminPassword"`
-}
-
-// KeycloakConfig is TEMPORARY, see Env.Keycloak.
-type KeycloakConfig struct {
-	BaseURL      string `mapstructure:"base_url"`
-	Realm        string `mapstructure:"realm"`
-	ClientID     string `mapstructure:"client_id"`
-	ClientSecret string `mapstructure:"client_secret"`
-	Enabled      bool   `mapstructure:"enabled"`
 }
 
 func NewEnv() *Env {

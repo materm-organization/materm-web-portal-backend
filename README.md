@@ -2,7 +2,7 @@
 
 # Materm Web Portal Backend
 
-Go backend API for the Materm Web Portal — built with Fiber v2. Currently contains the `auth` module only.
+Go backend API for the Materm Web Portal — built with Fiber v2. Currently contains only the local-JWT `auth` module (`POST /refresh`); the external OIDC sign-in was removed.
 
 ---
 
@@ -11,7 +11,6 @@ Fiber
 GORM
 Redis
 JWT
-Keycloak
 Swagger
 License
 Coverage
@@ -23,7 +22,7 @@ Coverage
 - **Database**: PostgreSQL with GORM (named connections: admin, sell, erp, device; only admin is connected today)
 - **Cache**: Redis
 - **Documentation**: Swagger/OpenAPI
-- **Authentication**: Keycloak (OIDC) + JWT
+- **Authentication**: local JWT (token refresh only; no sign-in endpoint yet)
 
 
 
@@ -36,7 +35,6 @@ Coverage
 - Go 1.25.0+
 - PostgreSQL
 - Redis
-- Keycloak instance
 - [SOPS](https://github.com/getsops/sops) (for config encryption/decryption)
 - [age](https://github.com/FiloSottile/age) (encryption backend used by SOPS)
 
@@ -107,13 +105,6 @@ jwt:
   secret:           # access token secret
   refreshSecret:    # refresh token secret
 
-minio:              # parsed only, no feature uses it yet
-  endpoint:
-  accessKey:
-  secretKey:
-  bucketName:
-  baseUrl:
-
 mailer:             # parsed only, no feature uses it yet
   host:
   username:
@@ -124,14 +115,6 @@ mailer:             # parsed only, no feature uses it yet
 bootstrap:          # parsed only, no feature uses it yet
   adminUsername:
   adminPassword:
-
-# TEMPORARY: kept until auth is rewritten on JWT (existing auth module reads it)
-keycloak:
-  base_url:
-  realm:
-  client_id:
-  client_secret:
-  enabled:
 ```
 
 Any key can also be overridden by an environment variable (`.` replaced by `_`, e.g. `REDIS_HOST`).
@@ -178,16 +161,14 @@ make run
 
 - **Swagger UI**: `http://localhost:8080/swagger/index.html`
 - **Base Path**: `/api/v1`
-- **Auth**: Bearer JWT Token (via Keycloak)
+- **Auth**: Bearer JWT (local scheme)
 
 ### Routes
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Health check (root level, not under `/api/v1`) |
-| `POST` | `/api/v1/signin` | Sign in via Keycloak |
 | `POST` | `/api/v1/refresh` | Refresh token (local JWT scheme) |
-| `GET` | `/api/v1/auth/me` | Current user info (Keycloak-protected) |
 
 
 

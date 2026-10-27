@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// plainZone matches a time zone name that needs no quoting (UTC, Asia/Bangkok, Etc/GMT+7, UTC+07:00).
+var plainZone = regexp.MustCompile(`^[A-Za-z0-9_+:./-]+$`)
 
 // DSN builds a libpq keyword/value connection string. Values are single-quoted
 // and escaped so passwords containing spaces or quotes are safe; sslmode and
@@ -27,7 +31,14 @@ func (c DBConnection) DSN() string {
 		parts = append(parts, "sslmode="+dsnQuote(c.SSLMode))
 	}
 	if c.Timezone != "" {
-		parts = append(parts, "TimeZone="+dsnQuote(c.Timezone))
+		// The gorm postgres driver re-reads the time zone from the DSN text with its own regexp and keeps the
+		// quotes ("'Asia/Bangkok'" is then rejected by the server: invalid value for parameter "TimeZone"), so a
+		// plain zone name is written unquoted; anything else is quoted like the other values.
+		if plainZone.MatchString(c.Timezone) {
+			parts = append(parts, "TimeZone="+c.Timezone)
+		} else {
+			parts = append(parts, "TimeZone="+dsnQuote(c.Timezone))
+		}
 	}
 	return strings.Join(parts, " ")
 }
