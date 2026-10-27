@@ -3,9 +3,9 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"go-fiber/pkg/cache"
-	constants "go-fiber/pkg/constants/services"
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/cache"
+	constants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"time"
 
 	"github.com/redis/go-redis/v9"

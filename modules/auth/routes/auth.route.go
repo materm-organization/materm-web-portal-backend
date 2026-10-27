@@ -1,8 +1,8 @@
 package routes
 
 import (
-	"go-fiber/modules/auth/controller"
-	"go-fiber/pkg/middleware"
+	"github.com/materm-organization/materm-web-portal-backend/modules/auth/controller"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )

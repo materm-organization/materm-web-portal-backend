@@ -3,8 +3,8 @@ package middleware
 import (
 	"encoding/json"
 	"fmt"
-	"go-fiber/bootstrap"
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"strings"
 	"time"
 

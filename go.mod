@@ -1,4 +1,4 @@
-module go-fiber
+module github.com/materm-organization/materm-web-portal-backend
 
 go 1.25.0
 

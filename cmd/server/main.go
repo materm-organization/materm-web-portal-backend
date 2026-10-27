@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"go-fiber/bootstrap"
-	"go-fiber/cmd/application"
+	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	"github.com/materm-organization/materm-web-portal-backend/cmd/application"
 	"log"
 )
 

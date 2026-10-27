@@ -1,8 +1,8 @@
 package application
 
 import (
-	"go-fiber/bootstrap"
-	"go-fiber/pkg/cache"
+	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/cache"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"

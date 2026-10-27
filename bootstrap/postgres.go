@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

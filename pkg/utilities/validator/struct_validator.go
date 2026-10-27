@@ -2,7 +2,7 @@ package validator
 
 import (
 	"fmt"
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"strings"
 
 	"github.com/go-playground/validator/v10"

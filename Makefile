@@ -32,7 +32,7 @@ test:
 	$(shell go env GOPATH)/bin/gotestsum --format testname ./tests/...
 
 test-coverage:
-	@$(GOTEST) -coverprofile=coverage.out -coverpkg=go-fiber/modules/... ./tests/... 2>&1 | grep "^ok"
+	@$(GOTEST) -coverprofile=coverage.out -coverpkg=github.com/materm-organization/materm-web-portal-backend/modules/... ./tests/... 2>&1 | grep "^ok"
 	@$(GOCMD) tool cover -func=coverage.out | grep -E "(services|mapper|^total)" | \
 		awk 'BEGIN{W=50;cur=""} \
 		/^total/{tp=$$3;next} \

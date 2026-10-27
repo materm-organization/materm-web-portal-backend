@@ -3,8 +3,8 @@ package services
 import (
 	"strings"
 
-	"go-fiber/modules/auth/models"
-	"go-fiber/pkg/middleware"
+	"github.com/materm-organization/materm-web-portal-backend/modules/auth/models"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/middleware"
 )
 
 // JwtAuthService refreshes tokens using this app's own encrypted-JWT scheme

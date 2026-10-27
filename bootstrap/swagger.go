@@ -27,7 +27,7 @@ package bootstrap
 
 import (
 	"fmt"
-	// _ "go-fiber/docs"
+	// _ "github.com/materm-organization/materm-web-portal-backend/docs"
 )
 
 // SwaggerConfig holds Swagger configuration

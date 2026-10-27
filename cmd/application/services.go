@@ -1,7 +1,7 @@
 package application
 
 import (
-	as "go-fiber/modules/auth/services"
+	as "github.com/materm-organization/materm-web-portal-backend/modules/auth/services"
 )
 
 type Services struct {

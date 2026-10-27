@@ -2,8 +2,8 @@ package application
 
 import (
 	"fmt"
-	ar "go-fiber/modules/auth/routes"
-	"go-fiber/pkg/constants"
+	ar "github.com/materm-organization/materm-web-portal-backend/modules/auth/routes"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/constants"
 	"os"
 	"time"
 

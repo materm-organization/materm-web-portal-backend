@@ -2,7 +2,7 @@ package bootstrap
 
 import (
 	"context"
-	constants "go-fiber/pkg/constants/services"
+	constants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"

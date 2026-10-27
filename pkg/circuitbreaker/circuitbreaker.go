@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 
 	"github.com/sony/gobreaker"
 )

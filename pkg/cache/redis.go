@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	constants "go-fiber/pkg/constants/services"
-	"go-fiber/pkg/logs"
+	constants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"time"
 
 	"github.com/redis/go-redis/v9"

@@ -2,7 +2,7 @@ package helper
 
 import (
 	"fmt"
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"time"
 )
 

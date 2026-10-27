@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"go-fiber/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 )
 
 const defaultTimeout = 10 * time.Second

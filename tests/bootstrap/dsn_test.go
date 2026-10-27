@@ -3,7 +3,7 @@ package bootstrap_test
 import (
 	"testing"
 
-	"go-fiber/bootstrap"
+	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
 
 	"github.com/stretchr/testify/assert"
 )

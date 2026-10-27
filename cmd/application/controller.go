@@ -1,7 +1,7 @@
 package application
 
 import (
-	authController "go-fiber/modules/auth/controller"
+	authController "github.com/materm-organization/materm-web-portal-backend/modules/auth/controller"
 )
 
 type Controllers struct {

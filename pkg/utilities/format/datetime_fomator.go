@@ -3,8 +3,8 @@ package formatter
 import (
 	"errors"
 	"fmt"
-	"go-fiber/pkg/logs"
-	"go-fiber/pkg/middleware"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/middleware"
 	"net/http"
 	"time"
 )

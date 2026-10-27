@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"go-fiber/modules/auth/services"
-	"go-fiber/pkg/middleware"
+	"github.com/materm-organization/materm-web-portal-backend/modules/auth/services"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
