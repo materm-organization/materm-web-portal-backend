@@ -25,7 +25,13 @@ type Database struct {
 	DSN string
 	// SQL is a pool on Name as the scratch superuser.
 	SQL *sql.DB
+
+	clusterDSN string
 }
+
+// ClusterDSN returns the DSN of the scratch cluster (the maintenance database), for statements that are
+// cluster-wide (roles). Treat as a secret.
+func (d *Database) ClusterDSN() string { return d.clusterDSN }
 
 // New creates materm_test_<random> on the scratch cluster named by MATERM_TEST_DSN and registers a
 // cleanup that drops it. It skips the test when MATERM_TEST_DSN is unset (run `make testdb-up`) and
@@ -37,8 +43,27 @@ func New(t testing.TB) *Database {
 	if dsn == "" {
 		t.Skipf("%s is not set: run `make testdb-up` and use `make test-db`", EnvDSN)
 	}
-	if err := Guard(dsn); err != nil {
+	d, err := Create()
+	if d != nil {
+		t.Cleanup(d.Drop) // registered before anything else can fail
+	}
+	if err != nil {
 		t.Fatalf("%v", err)
+	}
+	return d
+}
+
+// Create is New without a testing.TB: it creates materm_test_<random> on the scratch cluster named by
+// MATERM_TEST_DSN (all guards apply) for callers that share one database across a whole test binary
+// (TestMain). The caller must call Drop. When the database was created but a later step failed, both a
+// non-nil *Database (so Drop can remove it) and the error are returned.
+func Create() (*Database, error) {
+	dsn := os.Getenv(EnvDSN)
+	if dsn == "" {
+		return nil, fmt.Errorf("dbtest: %s is not set", EnvDSN)
+	}
+	if err := Guard(dsn); err != nil {
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -46,39 +71,41 @@ func New(t testing.TB) *Database {
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
-		t.Fatalf("dbtest: open scratch cluster: %v", redact(err, dsn))
+		return nil, fmt.Errorf("dbtest: open scratch cluster: %s", redact(err, dsn))
 	}
 	defer admin.Close()
 	if err = CheckScratchCluster(ctx, admin); err != nil {
-		t.Fatalf("%v", err)
+		return nil, err
 	}
 
 	name := "materm_test_" + randomHex(6)
 	if _, err = admin.ExecContext(ctx, `create database `+quoteIdent(name)); err != nil {
-		t.Fatalf("dbtest: create database: %v", redact(err, dsn))
+		return nil, fmt.Errorf("dbtest: create database: %s", redact(err, dsn))
 	}
-	d := &Database{Name: name}
-	t.Cleanup(func() { d.drop(dsn) }) // registered before anything else can fail
+	d := &Database{Name: name, clusterDSN: dsn}
 
 	childDSN, err := withDatabase(dsn, name)
 	if err != nil {
-		t.Fatalf("dbtest: build DSN: %v", err)
+		return d, fmt.Errorf("dbtest: build DSN: %w", err)
 	}
 	if err = Guard(childDSN); err != nil {
-		t.Fatalf("%v", err)
+		return d, err
 	}
 	pool, err := sql.Open("pgx", childDSN)
 	if err != nil {
-		t.Fatalf("dbtest: open %s: %v", name, redact(err, dsn))
+		return d, fmt.Errorf("dbtest: open %s: %s", name, redact(err, dsn))
 	}
 	if err := pool.PingContext(ctx); err != nil {
 		_ = pool.Close()
-		t.Fatalf("dbtest: ping %s: %v", name, redact(err, dsn))
+		return d, fmt.Errorf("dbtest: ping %s: %s", name, redact(err, dsn))
 	}
 
 	d.DSN, d.SQL = childDSN, pool
-	return d
+	return d, nil
 }
+
+// Drop closes the pool and drops the database (only ever a materm_test_* one).
+func (d *Database) Drop() { d.drop(d.clusterDSN) }
 
 // Gorm opens a GORM handle on the database. cfg may be nil.
 func (d *Database) Gorm(t testing.TB, cfg *gorm.Config) *gorm.DB {

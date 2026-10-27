@@ -18,7 +18,7 @@ func TestEveryKeyCarriesThePrefix(t *testing.T) {
 	for _, prefix := range []string{constants.AppKeyPrefix, "materm-portal:test-abc:"} {
 		k := New(prefix)
 		for name, key := range map[string]string{
-			"Gen": k.Gen(), "Cache": k.Cache(3, "page", "en", "abc"), "Tag": k.Tag("pages"), "Locales": k.Locales(),
+			"Gen": k.Gen(), "Inv": k.Inv(), "Cache": k.Cache(3, "page", "en", "abc"), "Tag": k.Tag("pages"), "Locales": k.Locales(),
 			"Preview": k.Preview("deadbeef"), "ReadRL": k.ReadRL("203.0.113.1", now),
 			"FormWindowRL": k.FormWindowRL("contact", "abc", now), "FormDailyRL": k.FormDailyRL("contact", "abc", now),
 			"IPSalt": k.IPSalt(now),
@@ -44,6 +44,7 @@ func TestKeyShapes(t *testing.T) {
 		k.Cache(3, "page", "la", "h"): "materm-portal:c:3:page:la:h",
 		k.Tag("posts:list"):           "materm-portal:tag:posts:list",
 		k.Locales():                   "materm-portal:locales",
+		k.Inv():                       "materm-portal:inv",
 		k.Preview("ab"):               "materm-portal:preview:ab",
 		k.FormDailyRL("c", "i", now):  "materm-portal:rl:form:c:i:d:20261027",
 		k.IPSalt(now):                 "materm-portal:ipsalt:20261027",

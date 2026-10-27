@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This repo is the **read API of the public Materm website** (design: `../doc/08-portal-integration.md` section 2; decisions: `../doc/00-decisions.md` section 10.4). It is no longer a skeleton of the old project: the leftover `modules/auth`, `pkg/middleware` and the `jwt.*`/`GlobalEnv` code are gone. State: PB-1 (cleanup + shared kernel) and PB-2 (bootstrap, portal key, probes) are done; the content modules (`site`, `pages`, `blog`, ...; PB-3 and later, milestone M2) do not exist yet, so the only routes are the probes.
+This repo is the **read API of the public Materm website** (design: `../doc/08-portal-integration.md` section 2; decisions: `../doc/00-decisions.md` section 10.4). It is no longer a skeleton of the old project: the leftover `modules/auth`, `pkg/middleware` and the `jwt.*`/`GlobalEnv` code are gone. State: PB-1 (cleanup + shared kernel), PB-2 (bootstrap, portal key, probes), PB-3 (read structs of the 21 views, `pkg/localize`, `pkg/media`, `pkg/richtext`) and PB-4 (`pkg/publiccache` + the `cms.invalidate` subscriber) are done; the content modules that serve routes (`site`, `pages`, `blog`, ...; PB-5 and later, milestone M2) do not exist yet, so the only routes are the probes.
 
 Rules that shape everything here:
 
@@ -26,7 +26,7 @@ See `Makefile`: `run`, `build`, `test`, `test-db`, `testdb-up`, `testdb-status`,
 
 ## Configuration
 
-`bootstrap/env.go`: `Env` = `server`, `database` (`pool` + `admin`, the **read-only** `cms_portal_ro` connection; `sell/erp/device`, `jwt`, `mailer`, `bootstrap` in the shared template are ignored), `redis`, `portal`, `file`, `media`, `cache`, `rateLimit`, `forms`, `preview`, `site` (the keys of doc/08 section 2.9; defaults in the README table). Keys the template lacks are registered with `SetDefault` so an environment variable (`PORTAL_FRONTENDKEYS`, `SERVER_ENV`, ...) reaches them. `Defaults()` repairs blanks; `Validate()` returns warnings plus a `ConfigError` listing every violated rule, **naming keys, never values**.
+`bootstrap/env.go`: `Env` = `server`, `database` (`pool` + `admin`, the **read-only** `cms_portal_ro` connection; `sell/erp/device`, `jwt`, `mailer`, `bootstrap` in the shared template are ignored), `redis`, `portal`, `file`, `media`, `cache` (also `invalidateKey` / `invalidateChannel` / `invalidateMaxAge`, see Redis), `rateLimit`, `forms`, `preview`, `site` (the keys of doc/08 section 2.9; defaults in the README table). Keys the template lacks are registered with `SetDefault` so an environment variable (`PORTAL_FRONTENDKEYS`, `SERVER_ENV`, ...) reaches them. `Defaults()` repairs blanks; `Validate()` returns warnings plus a `ConfigError` listing every violated rule, **naming keys, never values**.
 
 - `server.env` blank = `prod`; `dev` is the only lenient mode (`Strict()` = not dev). `server.port` is required.
 - `portal.frontendKeys`: at most 2 (rotation), each >= 32 printable ASCII bytes, distinct. Required outside dev. Blank in dev is allowed but fail-closed: every `/api/v1` request is 401 (no dev bypass; set `PORTAL_FRONTENDKEYS` to call the API).
@@ -77,6 +77,8 @@ SetupRepositories(ctx, env, redis)   // PostgreSQL (+ CheckRuntimeRole), cache r
 
 Prefix `materm-portal:` (`constants.AppKeyPrefix`); **never FLUSH** (the Redis is shared with the admin backend, prefix `materm-admin:`): `cache.DeleteAll` deletes by prefix. `pkg/rediskeys` names every key family of doc/08 section 2.7 (`gen`, `c:<gen>:…`, `tag:`, `locales`, `preview:`, `rl:read:`, `rl:form:`, `ipsalt:`); raw IPs are hashed (`ratelimit.Hash`), no key carries personal data. `pkg/ratelimit` (Redis Lua fixed window, `Middleware` with explicit `FailOpen`) is ported but **not mounted**: callers always have a key, so only the form limiter (PB-9) will use it.
 
+**Cache invalidation (PB-4).** `pkg/publiccache` caches finished response DTOs (`Get[T](ctx, cache, Spec, loader)`; loader returns the value and the public tags it depends on). Redis down / nil / `cache.enabled=false` = the loader answers (singleflight still shares concurrent loads); a Redis error mid-request is logged and the database answer is returned. A load remembers `gen` and `inv` before it reads the database and a single Lua script refuses to store when either moved (doc/10 R-024), so a slow request can never store an answer older than an invalidation. The subscriber (`cmd/application/invalidation.go`, started by `Setup`, stopped by `Runtime.Close`) listens on `cache.invalidateChannel` (default `materm:cms.invalidate`) for `{"payload":"<event JSON string>","sig":"<hex HMAC-SHA256(cache.invalidateKey, payload)>"}`; the event carries a signed `sent_at` (set by the relay at PUBLISH time; `Sign` fills it) and the subscriber rejects a bad signature, a missing `sent_at`, a `sent_at` older than `cache.invalidateMaxAge` (10 min) or more than 1 min in the future, and a repeated `event_id` (`occurred_at` is informational: a relay that was down publishes old events late and they must apply); it acts only on the public tag vocabulary (`publiccache.ValidTag`: the 5 internal shapes `shared_section:`, `menu_id:`, `menu_item:`, `category:`, `collection_id:` are ignored); tags `locales`/`*` bump `gen`; every other tag unlinks its tag set atomically, and again after 2 s (double delete). Every (re)subscribe bumps `gen` (pub/sub does not replay). Blank `cache.invalidateKey`: outside dev the subscriber does not start (warning), in dev it starts and accepts UNSIGNED messages. `publiccache.Sign` builds the envelope for the admin relay (T1.3.1).
+
 ### `pkg/`
 
 | Path | Purpose |
@@ -84,16 +86,25 @@ Prefix `materm-portal:` (`constants.AppKeyPrefix`); **never FLUSH** (the Redis i
 | `apperror/` `response/` `pagination/` `requestid/` | shared kernel, identical to the admin backend |
 | `logs/` | zap JSON to stdout + `logs/YYYY-MM-DD.log` (`LOG_FILE=off` for containers/tests); `Info/Warn/WarnEvery/Error`, field helpers, `WithRequest`/`FromContext` (request id only — no user id here) |
 | `portalkey/` `routepolicy/` | see above |
-| `ratelimit/` `rediskeys/` `cache/` | Redis building blocks |
+| `ratelimit/` `rediskeys/` `cache/` | Redis building blocks (`rediskeys.Inv()` = invalidation counter) |
+| `publiccache/` | response cache with generation + tag sets, stampede protection, signed invalidation subscriber (above) |
+| `localize/` | `Chain` from `v_public_locales` (never `v_locale_resolution`: not granted), `Negotiate` (`?locale` -> `Accept-Language` -> default; `lo` = `la`; 422 `in:"query"` on a bad code), `Collapse` of `x-localized` leaves with compiled `Hints`, `Provider` (process copy 60 s) |
+| `media/` | `Builder.URL/Item/Resolve`: `file.path_ip` + `/` + `storage_key`; keys under `media.staticPrefix` become `/<rest>`; `CollectIDs` finds `media_id` at any depth |
+| `richtext/` | `Resolve(doc, Lite\|Full, Resolver)`: allow-list sanitiser producing a JSON doc (no HTML), server-side link resolution, collects image `media_id`s; `CollectLinks` + `MapResolver` for batched lookups |
+| `testutil/schemadb` | builds the FULL reference schema (`../doc/sql/migrations/*.sql` + seeds + `fixture.sql`) on the scratch Postgres as owner `cms_migrator` and gives a read-only member of `cms_portal_ro`; `Shared(t)` once per test binary, `Teardown()` in `TestMain` |
 | `testutil/{dbtest,redistest}` | scratch-only DB/Redis helpers with hard guards |
 | `constants/` `constants/services/` | `MainRoute`, `HealthCheckRoute`; `AppKeyPrefix`, `RootKey`, `ExpireTime`, `DBQueryTimeout` (3 s) |
 | `utilities/{convertor,format,generator,helper,validator}`, `circuitbreaker/`, `httpclient/` | legacy helpers from the old project, kept (validator has `Struct/Issues` for apperror field errors) |
 
 ### Tests
 
-`tests/bootstrap` (DSN) plus tests next to the code: env/Validate, pipeline (404 envelope, panic hygiene, request id, body limit over a real listener, CORS incl. empty list, security headers, route template), portalkey, routepolicy, system service/controller, application wiring (`cmd/application`), and every ported package. `dbtest`-tagged: role check, Redis clear-on-start own prefix only, boot against scratch PG/Redis (`/ready` ok/degraded, creates nothing in the database), ratelimit Lua.
+`tests/bootstrap` (DSN) plus tests next to the code: env/Validate, pipeline (404 envelope, panic hygiene, request id, body limit over a real listener, CORS incl. empty list, security headers, route template), portalkey, routepolicy, system service/controller, application wiring (`cmd/application`), and every ported package. `dbtest`-tagged: role check, Redis clear-on-start own prefix only, boot against scratch PG/Redis (`/ready` ok/degraded, creates nothing in the database), ratelimit Lua; PB-3/PB-4: the read-only role reads the 21 views and nothing else (and has exactly the privileges of `cms_portal_ro`), every entity matches its view's columns, every repository against fixture rows, the cache flow (hit/miss, tag sets, generation, R-024, double delete, subscriber with signed/bad/stale/replayed messages, resubscribe after a killed connection) on a random Redis prefix, and `Setup` starting/stopping the subscriber.
 
-### Adding a module (PB-3 and later)
+### `modules/content` (PB-3)
+
+Shared by every content module (a deviation from "one entities/repositories per module": the views are used across endpoints, e.g. assets by pages, posts and gallery). `entities/` = read-structs of the 21 granted views (explicit `gorm:"column:"`, no json tags, nullable columns are pointers, `JSONB`/`StringArray` scanners; `PublishedPostCard` is `v_published_posts` without `body`). `repositories/` = `Set` (`repositories.New(db)`) with one interface per area (Locales, UIStrings, Settings, Menus, Pages, Taxonomy, Posts, Albums, FAQ, Forms, Collections, SEO, Assets); finders return `repositories.ErrNotFound`; every query filters `requested_locale` (the caller passes a locale already normalised by `localize`) and selects explicit columns. `NewMediaLookup(Assets)` adapts to `media.Lookup`. `Setup` exposes `Repositories.{Content,PublicCache,Media}` and `Services.{Locales,Media,MediaLookup}`.
+
+### Adding a module (PB-5 and later)
 
 1. Create `modules/<name>/{controller,entities,models,routes,services,repositories}/`.
 2. Register the repository/service/controller in `cmd/application/{repositories,services,controller}.go` and the routes in `router.go` on the `api` group with `routepolicy.PortalKey()`.

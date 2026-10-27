@@ -299,3 +299,75 @@ func TestDBConnectionHelpers(t *testing.T) {
 		t.Errorf("Missing = %v", m)
 	}
 }
+
+func TestInvalidationDefaultsAndEnvOverride(t *testing.T) {
+	clearEnv(t)
+	env, err := LoadEnv(writeConfig(t, blankTemplate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Cache.InvalidateKey != "" || env.Cache.InvalidateChannel != "materm:cms.invalidate" || env.Cache.InvalidateMaxAge != 10*time.Minute {
+		t.Errorf("defaults: %+v", env.Cache)
+	}
+	t.Setenv("CACHE_INVALIDATEKEY", " "+goodKey1+" ")
+	t.Setenv("CACHE_INVALIDATECHANNEL", "mine:chan")
+	t.Setenv("CACHE_INVALIDATEMAXAGE", "2m")
+	env, err = LoadEnv(writeConfig(t, blankTemplate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Cache.InvalidateKey != goodKey1 || env.Cache.InvalidateChannel != "mine:chan" || env.Cache.InvalidateMaxAge != 2*time.Minute {
+		t.Errorf("env override: %+v", env.Cache)
+	}
+}
+
+func TestValidateInvalidation(t *testing.T) {
+	// blank key: a warning outside dev (the process still starts), a different warning in dev
+	e := validEnv()
+	warnings, err := e.Validate()
+	if err != nil || !hasProblem(warnings, "cache.invalidateKey: blank, the cache invalidation subscriber is off") {
+		t.Errorf("prod blank key: %v %v", warnings, err)
+	}
+	e.Server.Env = EnvDev
+	warnings, _ = e.Validate()
+	if !hasProblem(warnings, "UNSIGNED") {
+		t.Errorf("dev blank key: %v", warnings)
+	}
+	// a good key is silent
+	e = validEnv()
+	e.Cache.InvalidateKey = goodKey2
+	warnings, err = e.Validate()
+	if err != nil || hasProblem(warnings, "invalidateKey") {
+		t.Errorf("good key: %v %v", warnings, err)
+	}
+	for name, tc := range map[string]struct {
+		mutate func(*Env)
+		want   string
+	}{
+		"short key":    {func(e *Env) { e.Cache.InvalidateKey = "short" }, "cache.invalidateKey: too short"},
+		"key space":    {func(e *Env) { e.Cache.InvalidateKey = goodKey1 + " x" }, "cache.invalidateKey: only printable"},
+		"bad channel":  {func(e *Env) { e.Cache.InvalidateChannel = "has space" }, "cache.invalidateChannel"},
+		"glob channel": {func(e *Env) { e.Cache.InvalidateChannel = "materm:*" }, "cache.invalidateChannel"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := validEnv()
+			tc.mutate(bad)
+			ps := problems(t, bad)
+			if !hasProblem(ps, tc.want) {
+				t.Errorf("want %q, got %v", tc.want, ps)
+			}
+		})
+	}
+	// the value never appears in a message
+	e = validEnv()
+	e.Cache.InvalidateKey = "leaky-short"
+	_, err = e.Validate()
+	if err == nil || strings.Contains(err.Error(), "leaky-short") {
+		t.Errorf("value leaked or no error: %v", err)
+	}
+	e = validEnv()
+	e.Cache.InvalidateMaxAge = 2 * time.Hour
+	if w, _ := e.Validate(); !hasProblem(w, "invalidateMaxAge") {
+		t.Errorf("max age warning: %v", w)
+	}
+}

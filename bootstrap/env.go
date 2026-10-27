@@ -151,9 +151,18 @@ type MediaConfig struct {
 }
 
 // CacheConfig: Enabled=false turns the response cache off (debugging); TTL is the upper bound of staleness.
+//
+// The invalidate* keys configure the subscriber that clears the cache when the admin backend publishes a
+// signed message (doc/08 section 2.7, doc/10 R-017): InvalidateKey is the HMAC secret shared with the admin
+// relay (>= 32 printable ASCII bytes; env CACHE_INVALIDATEKEY, never committed; blank outside dev = the
+// subscriber does not start, in dev = it accepts unsigned messages), InvalidateChannel the Redis channel and
+// InvalidateMaxAge how old a message may be before it is rejected as a replay.
 type CacheConfig struct {
-	Enabled bool          `mapstructure:"enabled"`
-	TTL     time.Duration `mapstructure:"ttl"`
+	Enabled           bool          `mapstructure:"enabled"`
+	TTL               time.Duration `mapstructure:"ttl"`
+	InvalidateKey     string        `mapstructure:"invalidateKey"`
+	InvalidateChannel string        `mapstructure:"invalidateChannel"`
+	InvalidateMaxAge  time.Duration `mapstructure:"invalidateMaxAge"`
 }
 
 // RateLimitConfig: ReadPerMinute is the read ceiling (NFR-15). The portal reaches its API only with a portal
@@ -216,6 +225,11 @@ const (
 	defaultMinFill       = 3
 	defaultMaxClockSkew  = 10 * time.Minute
 	defaultPreviewTTL    = 10 * time.Second
+
+	// DefaultInvalidateChannel equals publiccache.DefaultChannel (a test keeps them in step; bootstrap does not
+	// import the cache package).
+	DefaultInvalidateChannel = "materm:cms.invalidate"
+	defaultInvalidateMaxAge  = 10 * time.Minute
 )
 
 // registerDefaults makes the keys the user's template lacks known to viper and gives them their default
@@ -231,6 +245,9 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("media.staticPrefix", defaultStaticPrefix)
 	v.SetDefault("cache.enabled", true)
 	v.SetDefault("cache.ttl", defaultCacheTTL)
+	v.SetDefault("cache.invalidateKey", "")
+	v.SetDefault("cache.invalidateChannel", DefaultInvalidateChannel)
+	v.SetDefault("cache.invalidateMaxAge", defaultInvalidateMaxAge)
 	v.SetDefault("rateLimit.readPerMinute", defaultReadPerMinute)
 	v.SetDefault("forms.dailyLimit", defaultDailyLimit)
 	v.SetDefault("forms.minFillSeconds", defaultMinFill)
@@ -275,6 +292,14 @@ func (e *Env) Defaults() {
 	}
 	if e.Cache.TTL <= 0 {
 		e.Cache.TTL = defaultCacheTTL
+	}
+	e.Cache.InvalidateKey = strings.TrimSpace(e.Cache.InvalidateKey)
+	e.Cache.InvalidateChannel = strings.TrimSpace(e.Cache.InvalidateChannel)
+	if e.Cache.InvalidateChannel == "" {
+		e.Cache.InvalidateChannel = DefaultInvalidateChannel
+	}
+	if e.Cache.InvalidateMaxAge <= 0 {
+		e.Cache.InvalidateMaxAge = defaultInvalidateMaxAge
 	}
 	if e.RateLimit.ReadPerMinute <= 0 {
 		e.RateLimit.ReadPerMinute = defaultReadPerMinute
@@ -372,6 +397,7 @@ func (e *Env) Validate() (warnings []string, err error) {
 	e.validateCORS(fail)
 	e.validatePortalKeys(strict, fail, warn)
 	e.validateFile(fail)
+	e.validateInvalidation(strict, fail, warn)
 
 	if strict && len(e.Server.TrustedProxies) == 0 {
 		warn("server.trustedProxies: blank, forwarding headers are ignored (the client address is the proxy's behind a reverse proxy)")
@@ -445,5 +471,32 @@ func (e *Env) validateFile(fail func(string, ...any)) {
 	u, err := url.Parse(e.File.PathIP)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		fail("file.path_ip: must be an http(s) URL with a host")
+	}
+}
+
+// invalidateChannelPattern is the shape of cache.invalidateChannel (printable, no glob characters).
+var invalidateChannelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:._-]{0,99}$`)
+
+// validateInvalidation checks the cache.invalidate* keys. Outside dev a blank key is only a warning: the
+// subscriber then stays off and entries expire by cache.ttl; the process itself still starts.
+func (e *Env) validateInvalidation(strict bool, fail, warn func(string, ...any)) {
+	c := e.Cache
+	switch k := c.InvalidateKey; {
+	case k == "":
+		if strict {
+			warn("cache.invalidateKey: blank, the cache invalidation subscriber is off (entries expire only by cache.ttl); set CACHE_INVALIDATEKEY")
+		} else {
+			warn("cache.invalidateKey: blank in dev, the invalidation subscriber accepts UNSIGNED messages")
+		}
+	case len(k) < minPortalKeyBytes:
+		fail("cache.invalidateKey: too short (min %d bytes)", minPortalKeyBytes)
+	case !headerSafe.MatchString(k):
+		fail("cache.invalidateKey: only printable ASCII without spaces is allowed")
+	}
+	if !invalidateChannelPattern.MatchString(c.InvalidateChannel) {
+		fail("cache.invalidateChannel: must be 1-100 characters of letters, digits and : . _ -")
+	}
+	if c.InvalidateMaxAge > time.Hour {
+		warn("cache.invalidateMaxAge: longer than 1h widens the replay window of invalidation messages")
 	}
 }

@@ -10,7 +10,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
 )
 
@@ -22,6 +24,9 @@ type Runtime struct {
 	Registry *routepolicy.Registry
 	// API is the /api/v1 group behind the portal key guard.
 	API *routepolicy.Group
+	// Invalidation is the cache invalidation subscriber; nil when it is not running (no Redis, cache off, or no
+	// cache.invalidateKey outside dev).
+	Invalidation *publiccache.Subscriber
 }
 
 // Setup connects `database.admin` (read-only role; nothing is migrated, seeded or written), builds
@@ -32,12 +37,27 @@ func Setup(ctx context.Context, app *bootstrap.Application) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	invalidation, err := SetupInvalidation(ctx, app.Env, repos)
+	if err != nil {
+		CloseRepositories(repos)
+		return nil, err
+	}
 	services := SetupServices(repos, app.Env.Strict())
 	controllers := SetupControllers(services)
 	keys := portalkey.New(app.Env.Portal.FrontendKeys)
 	reg, api := SetupRouter(app.Fiber, controllers, keys)
-	return &Runtime{Fiber: app.Fiber, Repos: repos, Services: services, Registry: reg, API: api}, nil
+	return &Runtime{Fiber: app.Fiber, Repos: repos, Services: services, Registry: reg, API: api, Invalidation: invalidation}, nil
 }
 
-// Close closes the database pool. It does not touch Redis or Fiber: whoever created them owns them.
-func (rt *Runtime) Close() { CloseRepositories(rt.Repos) }
+// Close stops the invalidation subscriber (cancels its loop and a pending second delete, closes the
+// subscription, waits for the goroutines) and then closes the database pool. It does not touch Redis or
+// Fiber: whoever created them owns them. Safe to call more than once.
+func (rt *Runtime) Close() {
+	if rt.Invalidation != nil {
+		if err := rt.Invalidation.Close(); err != nil {
+			logs.Error("closing the invalidation subscriber failed", logs.Err(err))
+		}
+		rt.Invalidation = nil
+	}
+	CloseRepositories(rt.Repos)
+}

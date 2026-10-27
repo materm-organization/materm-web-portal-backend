@@ -37,6 +37,11 @@ func (k Keys) Prefix() string { return k.prefix }
 // Gen is the cache generation number (INCR = logical flush of every cache entry; no TTL).
 func (k Keys) Gen() string { return k.prefix + "gen" }
 
+// Inv is the invalidation counter: INCR-ed by every applied invalidation (before the keys are deleted). A cache
+// write is refused when it changed since the load started (doc/10 R-024: a slow request that read the
+// database before a commit must not write its stale answer after the second delete). It never expires.
+func (k Keys) Inv() string { return k.prefix + "inv" }
+
 // Cache is one cached response DTO: materm-portal:c:<gen>:<resource>:<locale>:<paramsHash>. paramsHash is
 // the sha1 of the normalised parameters (computed by the caller); resource and locale are fixed vocabularies.
 func (k Keys) Cache(gen int64, resource, locale, paramsHash string) string {

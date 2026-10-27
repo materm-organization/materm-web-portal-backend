@@ -107,6 +107,9 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `file.path_ip` | blank | base URL of the file service (media URLs) |
 | `media.staticPrefix` | `static/` | storage keys with this prefix are served by portal-frontend from `public/` |
 | `cache.enabled`, `cache.ttl` | `true`, `24h` | response cache |
+| `cache.invalidateKey` | blank | HMAC secret of the cache-invalidation messages the admin backend publishes (>= 32 printable ASCII bytes; env `CACHE_INVALIDATEKEY`, never in the repo). Blank outside dev: the subscriber does not start (warning); blank in dev: it accepts unsigned messages |
+| `cache.invalidateChannel` | `materm:cms.invalidate` | Redis pub/sub channel of the invalidation messages |
+| `cache.invalidateMaxAge` | `10m` | oldest `occurred_at` an invalidation message may have (replay protection) |
 | `rateLimit.readPerMinute` | `300` | read ceiling per client |
 | `forms.dailyLimit`, `forms.minFillSeconds`, `forms.maxClockSkew` | `20`, `3`, `10m` | contact form limits |
 | `preview.cacheTTL` | `10s` | preview snapshot cache |

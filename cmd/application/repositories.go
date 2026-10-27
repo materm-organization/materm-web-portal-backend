@@ -8,8 +8,11 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	contentrepositories "github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/cache"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/media"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
 )
 
 // Repositories holds the shared infrastructure handles. Module repositories (PB-3 and later) are added
@@ -20,6 +23,13 @@ type Repositories struct {
 	// Redis is nil when Redis was unreachable in dev (degraded start).
 	Redis     *redis.Client
 	CacheRepo cache.RedisRepository
+	// Content reads the 21 public views (modules/content, PB-3): the repositories every content module uses.
+	Content *contentrepositories.Set
+	// PublicCache is the response cache (PB-4): generation + tag sets in Redis, a direct database read when
+	// Redis is missing or cache.enabled is false.
+	PublicCache *publiccache.Cache
+	// Media builds public media URLs from file.path_ip and media.staticPrefix (PB-3).
+	Media *media.Builder
 }
 
 // SetupRepositories opens the one PostgreSQL connection (database.admin, which for the portal is the
@@ -40,7 +50,14 @@ func SetupRepositories(ctx context.Context, env *bootstrap.Env, rdb *redis.Clien
 		_ = conn.Close()
 		return nil, fmt.Errorf("database role: %w", err)
 	}
-	return &Repositories{postgres: conn, DB: db, Redis: rdb, CacheRepo: cache.NewRedisRepository(rdb)}, nil
+	return &Repositories{
+		postgres: conn, DB: db, Redis: rdb, CacheRepo: cache.NewRedisRepository(rdb),
+		Content: contentrepositories.New(db),
+		Media:   media.NewBuilder(media.Config{PathIP: env.File.PathIP, StaticPrefix: env.Media.StaticPrefix}),
+		PublicCache: publiccache.New(publiccache.Options{
+			Client: publiccache.FromClient(rdb), Enabled: env.Cache.Enabled, TTL: env.Cache.TTL,
+		}),
+	}, nil
 }
 
 // CloseRepositories closes the database pool. Redis is closed by whoever created it.
