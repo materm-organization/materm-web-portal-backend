@@ -6,7 +6,7 @@ This repo is the **read API of the public Materm website** (design: `../doc/08-p
 
 Rules that shape everything here:
 
-- **Server-to-server only.** The only caller is the portal-frontend server, which sends `X-Portal-Key`. Every route under `/api/v1` needs it (guard mounted once on the group, so even unknown paths are 401 without it); only `/health` and `/ready` are open. There is no user, no JWT, no login.
+- **Server-to-server only.** The only caller is the portal-frontend server, which sends `X-Portal-Key`. Every route under `/api/v1` needs it (guard mounted once on the group, so even unknown paths are 401 without it); only `/health` and `/ready` are open. `/ready` answers 200 `degraded` when only Redis is down and 503 only when the database is down (the portal reads from the database; the cache just degrades). There is no user, no JWT, no login.
 - **Read-only.** The database role is `cms_portal_ro` (SELECT on the `v_public_*`/`v_published_*` views, EXECUTE on `forms_submit_form` and `cms_consume_preview_token`). The portal **never migrates, seeds or writes through GORM models**: no `AutoMigrate`, no SQL runner. The admin backend owns the schema.
 - **Same error/response shapes as the admin backend.** `pkg/apperror`, `pkg/response`, `pkg/pagination`, `pkg/requestid` are copies of the admin packages and are kept identical on purpose (doc/06 section 1.3): change them in both repos or in neither.
 - Hard rules for agents: never connect to the database `materm` / container `postgres-maxdb` / `redis-stack`; never print or commit `config.yaml` values, `.env*`, `config.enc.yaml`.
