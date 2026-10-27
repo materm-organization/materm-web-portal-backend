@@ -77,8 +77,8 @@ func (l *Limits) Check(ctx context.Context, p Plan) error {
 		limit  int
 		window time.Duration
 	}{
-		{l.aggregateKey(p.KeyID, "m:"+now.Format("200601021504")), l.keyPerMinute, time.Minute},
-		{l.aggregateKey(p.KeyID, "d:"+now.Format("20060102")), l.keyPerDay, dailyTTL},
+		{l.keys.FormKeyMinuteRL(p.KeyID, now), l.keyPerMinute, time.Minute},
+		{l.keys.FormKeyDailyRL(p.KeyID, now), l.keyPerDay, dailyTTL},
 	} {
 		res, err := l.limiter.Hit(ctx, c.key, c.limit, c.window)
 		if err != nil {
@@ -128,10 +128,6 @@ func (l *Limits) Check(ctx context.Context, p Plan) error {
 	return nil
 }
 
-func (l *Limits) aggregateKey(keyID, tail string) string {
-	return l.keys.Prefix() + "rl:form-key:" + keyID + ":" + tail
-}
-
 // Dedupe makes an identical retry harmless. forms_submit_form does not de-duplicate (every call inserts), so
 // a double click or a retried request would store the message twice: before the insert the service claims a
 // short-lived marker for (visitor, form, content); a second identical submission inside the TTL finds it and
@@ -155,7 +151,7 @@ func NewDedupe(client redis.Cmdable, keys rediskeys.Keys, ttl time.Duration) *De
 // Key builds the marker key from the form, the visitor hash and the canonical content.
 func (d *Dedupe) Key(slug, ipShort string, canonicalData []byte) string {
 	sum := sha256.Sum256(append([]byte(ipShort+"|"+slug+"|"), canonicalData...))
-	return d.keys.Prefix() + "rl:form:" + slug + ":" + ipShort + ":dup:" + hex.EncodeToString(sum[:])[:32]
+	return d.keys.FormDup(slug, ipShort, hex.EncodeToString(sum[:])[:32])
 }
 
 // Claim returns true for the first caller of key and false for a duplicate inside the TTL.

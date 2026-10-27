@@ -2,14 +2,17 @@ package assemble
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/richtext"
 )
 
-// FormDefinition is the public definition of a form (doc/08 section 2.3.4): what P-14 answers and what
-// `resolved.form` of a contact_section carries. No recipients, no retention, no rate limits; "x-pii" is
-// removed from the field schemas. Shared by modules/pages and modules/forms so that the shape exists once.
+// FormDefinition is the public definition of a form (doc/08 section 2.3.4): what `resolved.form` of a
+// contact_section carries and the base of what P-14 answers (modules/forms adds min_fill_seconds). No
+// recipients, no retention, no rate limits; "x-pii" and "x-error" are removed from the field schemas. This is
+// the ONE builder of the shape (modules/forms and modules/pages both call BuildForm), so the two cannot drift.
 type FormDefinition struct {
 	Slug               string            `json:"slug"`
 	ResolvedLocale     string            `json:"resolved_locale"`
@@ -33,13 +36,13 @@ type FormSuccess struct {
 
 // FormField is one field: its JSON Schema, translated label/placeholder/help, and the options of an enum.
 type FormField struct {
-	Key         string          `json:"key"`
-	Required    bool            `json:"required"`
-	Schema      json.RawMessage `json:"schema"`
-	Label       string          `json:"label"`
-	Placeholder *string         `json:"placeholder"`
-	Help        *string         `json:"help"`
-	Options     []FormOption    `json:"options,omitempty"`
+	Key         string         `json:"key"`
+	Required    bool           `json:"required"`
+	Schema      map[string]any `json:"schema"`
+	Label       string         `json:"label"`
+	Placeholder *string        `json:"placeholder"`
+	Help        *string        `json:"help"`
+	Options     []FormOption   `json:"options,omitempty"`
 }
 
 // FormOption is one value of an enum field with its translated label.
@@ -48,72 +51,85 @@ type FormOption struct {
 	Label string `json:"label"`
 }
 
-// BuildForm assembles the definition from v_published_forms and v_published_form_fields. A field of
-// field_order without a translation row is still listed (its key is its label).
-func BuildForm(f *entities.PublishedForm, fields []entities.PublishedFormField) *FormDefinition {
-	var schema struct {
-		Required   []string                   `json:"required"`
-		Properties map[string]json.RawMessage `json:"properties"`
+// internalSchemaKeys are removed from the field schemas that leave the server: x-pii marks personal fields for
+// the retention job, x-error holds the error-code annotations of the validator.
+var internalSchemaKeys = []string{"x-pii", "x-error"}
+
+type schemaDoc struct {
+	Required   []string                  `json:"required"`
+	Properties map[string]map[string]any `json:"properties"`
+}
+
+// BuildForm turns the rows of v_published_forms and v_published_form_fields into the public definition.
+// Fields follow field_order; properties that field_order forgets follow alphabetically; a field without a
+// translation is labelled with its key (the form still renders). A json_schema that is not an object is an
+// error: the caller decides (P-14 answers 500, a contact_section drops the form).
+func BuildForm(f entities.PublishedForm, fields []entities.PublishedFormField) (*FormDefinition, error) {
+	var sd schemaDoc
+	if err := json.Unmarshal(f.JSONSchema.Bytes(), &sd); err != nil {
+		return nil, fmt.Errorf("form %s: json_schema is not an object", f.Slug)
 	}
-	_ = json.Unmarshal(f.JSONSchema.Bytes(), &schema) // a malformed schema yields a form without fields
-	required := make(map[string]bool, len(schema.Required))
-	for _, k := range schema.Required {
+	required := make(map[string]bool, len(sd.Required))
+	for _, k := range sd.Required {
 		required[k] = true
 	}
-	byKey := make(map[string]entities.PublishedFormField, len(fields))
-	for _, fl := range fields {
-		byKey[fl.FieldKey] = fl
+	tr := make(map[string]entities.PublishedFormField, len(fields))
+	for _, t := range fields {
+		tr[t.FieldKey] = t
 	}
 
-	out := &FormDefinition{
-		Slug: f.Slug, ResolvedLocale: f.ResolvedLocale, Title: f.Title, Description: strOr(f.Description),
-		SubmitLabel: f.SubmitLabel, SendingLabel: strOr(f.SendingLabel),
-		Success:            FormSuccess{Title: strOr(f.SuccessTitle), Description: strOr(f.SuccessDescription), AgainLabel: strOr(f.SuccessAgainLabel)},
-		Messages:           map[string]string{},
-		HoneypotField:      strOr(f.HoneypotField),
-		Fields:             []FormField{},
-		SuccessRedirectURL: f.SuccessRedirectURL,
-	}
-	if b := f.Messages.Bytes(); len(b) > 0 {
-		_ = json.Unmarshal(b, &out.Messages)
-		if out.Messages == nil {
-			out.Messages = map[string]string{}
+	order := make([]string, 0, len(sd.Properties))
+	seen := map[string]bool{}
+	for _, k := range f.FieldOrder {
+		if _, ok := sd.Properties[k]; ok && !seen[k] {
+			order = append(order, k)
+			seen[k] = true
 		}
 	}
-	for _, key := range f.FieldOrder {
-		propRaw, ok := schema.Properties[key]
-		if !ok {
-			continue
+	var rest []string
+	for k := range sd.Properties {
+		if !seen[k] {
+			rest = append(rest, k)
 		}
-		var prop map[string]any
-		if json.Unmarshal(propRaw, &prop) != nil {
-			continue
-		}
-		delete(prop, "x-pii")
-		sb, _ := json.Marshal(prop)
-		tr := byKey[key]
-		field := FormField{Key: key, Required: required[key], Schema: sb, Label: tr.Label, Placeholder: tr.Placeholder, Help: tr.Help}
-		if field.Label == "" {
-			field.Label = key
-		}
-		if enum, ok := prop["enum"].([]any); ok {
-			var labels map[string]string
-			if b := tr.OptionLabels.Bytes(); len(b) > 0 {
-				_ = json.Unmarshal(b, &labels)
+	}
+	sort.Strings(rest)
+	order = append(order, rest...)
+
+	def := &FormDefinition{
+		Slug: f.Slug, ResolvedLocale: f.ResolvedLocale, Title: f.Title, SubmitLabel: f.SubmitLabel,
+		Description: strOr(f.Description), SendingLabel: strOr(f.SendingLabel), HoneypotField: strOr(f.HoneypotField),
+		Success:  FormSuccess{Title: strOr(f.SuccessTitle), Description: strOr(f.SuccessDescription), AgainLabel: strOr(f.SuccessAgainLabel)},
+		Messages: stringMap(f.Messages.Bytes()), SuccessRedirectURL: f.SuccessRedirectURL,
+		Fields: make([]FormField, 0, len(order)),
+	}
+	for _, k := range order {
+		schema := cloneWithout(sd.Properties[k], internalSchemaKeys)
+		t, translated := tr[k]
+		ff := FormField{Key: k, Required: required[k], Schema: schema, Label: k}
+		if translated {
+			if t.Label != "" {
+				ff.Label = t.Label
 			}
-			field.Options = make([]FormOption, 0, len(enum))
+			ff.Placeholder = t.Placeholder
+			ff.Help = t.Help
+		}
+		if enum, ok := schema["enum"].([]any); ok {
+			labels := stringMap(t.OptionLabels.Bytes())
 			for _, e := range enum {
-				v, _ := e.(string)
-				label := labels[v]
-				if label == "" {
-					label = v
+				v, isString := e.(string)
+				if !isString {
+					continue
 				}
-				field.Options = append(field.Options, FormOption{Value: v, Label: label})
+				label := v
+				if l := labels[v]; l != "" {
+					label = l
+				}
+				ff.Options = append(ff.Options, FormOption{Value: v, Label: label})
 			}
 		}
-		out.Fields = append(out.Fields, field)
+		def.Fields = append(def.Fields, ff)
 	}
-	return out
+	return def, nil
 }
 
 func strOr(s *string) string {
@@ -121,6 +137,35 @@ func strOr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// stringMap reads a JSON object and keeps its string values (anything else is dropped); never nil.
+func stringMap(raw []byte) map[string]string {
+	out := map[string]string{}
+	if len(raw) == 0 {
+		return out
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return out
+	}
+	for k, v := range m {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+func cloneWithout(m map[string]any, drop []string) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	for _, k := range drop {
+		delete(out, k)
+	}
+	return out
 }
 
 // FAQItem is one question of a FAQ group; Answer is a sanitised rich text (lite) document.

@@ -4,11 +4,22 @@ import (
 	"context"
 	"time"
 
+	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	blogservices "github.com/materm-organization/materm-web-portal-backend/modules/blog/services"
 	contentrepositories "github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
+	faqservices "github.com/materm-organization/materm-web-portal-backend/modules/faq/services"
+	formsservices "github.com/materm-organization/materm-web-portal-backend/modules/forms/services"
+	galleryservices "github.com/materm-organization/materm-web-portal-backend/modules/gallery/services"
+	pagesservices "github.com/materm-organization/materm-web-portal-backend/modules/pages/services"
+	seoservices "github.com/materm-organization/materm-web-portal-backend/modules/seo/services"
+	siteservices "github.com/materm-organization/materm-web-portal-backend/modules/site/services"
 	systemservices "github.com/materm-organization/materm-web-portal-backend/modules/system/services"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/iphash"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/media"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/ratelimit"
 )
 
 // Services holds the services of every module.
@@ -20,6 +31,16 @@ type Services struct {
 	Media *media.Builder
 	// MediaLookup loads assets for Media.Resolve.
 	MediaLookup media.Lookup
+	// Assembler turns a page's sections into the P-06 payload (pkg/assemble); the pages service uses it.
+	Assembler *assemble.Assembler
+
+	Site    siteservices.SiteService       // P-01 ... P-05
+	Pages   pagesservices.PageService      // P-06
+	SEO     seoservices.SEOService         // P-16
+	Blog    blogservices.BlogService       // P-07 ... P-10
+	Gallery galleryservices.GalleryService // P-11, P-12
+	Faq     faqservices.FaqService         // P-13
+	Forms   formsservices.FormService      // P-14, P-15
 }
 
 // localesResource is the cache resource of the locale chain.
@@ -28,17 +49,53 @@ const localesResource = "locales"
 // localesTTL is how long the Redis copy of the chain lives (doc/08 section 2.7).
 const localesTTL = 10 * time.Minute
 
-// SetupServices builds the services from the repositories. strict is staging/prod (a Redis outage makes
-// /ready answer 503).
-func SetupServices(repos *Repositories, strict bool) *Services {
+// SetupServices builds the services from the repositories and the configuration (site.defaultBaseUrl and the
+// forms.* limits come from env; env.Strict() is staging/prod, where a Redis outage makes /ready degraded and a
+// submission refuse with 503).
+func SetupServices(repos *Repositories, env *bootstrap.Env) *Services {
+	content, cache, rc, keys := repos.Content, repos.PublicCache, repos.RC, repos.Keys
+	baseURL := env.Site.DefaultBaseURL
+
+	locales := localize.NewProvider(localeFetcher(repos), localize.DefaultProviderTTL)
+	lookup := contentrepositories.NewMediaLookup(content.Assets)
+	assembler := assemble.New(assemble.Deps{
+		Locales: content.Locales, Pages: content.Pages, Posts: content.Posts, Taxonomy: content.Taxonomy,
+		Albums: content.Albums, FAQ: content.FAQ, Forms: content.Forms, Settings: content.Settings,
+		Media: repos.Media, MediaLookup: lookup, DefaultBaseURL: baseURL,
+	})
+
 	return &Services{
-		Locales:     localize.NewProvider(localeFetcher(repos), localize.DefaultProviderTTL),
+		Locales:     locales,
 		Media:       repos.Media,
-		MediaLookup: contentrepositories.NewMediaLookup(repos.Content.Assets),
+		MediaLookup: lookup,
+		Assembler:   assembler,
 		System: systemservices.NewSystemService(systemservices.Deps{
 			PingDB:    systemservices.DBPinger(repos.DB),
 			PingRedis: systemservices.RedisPinger(repos.Redis),
-			Strict:    strict,
+			Strict:    env.Strict(),
+		}),
+		Site: siteservices.NewSiteService(siteservices.Deps{
+			Locales: content.Locales, UIStrings: content.UIStrings, Settings: content.Settings, Menus: content.Menus,
+			Cache: cache, Media: repos.Media, MediaLookup: lookup,
+		}),
+		Pages: pagesservices.NewPageService(pagesservices.Deps{Pages: content.Pages, Assembler: assembler, Cache: cache}),
+		SEO: seoservices.NewSEOService(seoservices.Deps{
+			SEO: content.SEO, Settings: content.Settings, Cache: cache, DefaultBaseURL: baseURL,
+		}),
+		Blog: blogservices.NewBlogService(blogservices.Deps{
+			Content: content, Media: repos.Media, Lookup: lookup, Cache: cache, Locales: locales, DefaultBaseURL: baseURL,
+		}),
+		Gallery: galleryservices.NewGalleryService(galleryservices.Deps{
+			Content: content, Media: repos.Media, Lookup: lookup, Cache: cache,
+		}),
+		Faq: faqservices.NewFaqService(faqservices.Deps{Content: content, Cache: cache}),
+		Forms: formsservices.NewFormService(formsservices.Deps{
+			Forms: content.Forms, Submitter: repos.Submissions, Cache: cache,
+			Hasher: iphash.New(rc, keys), Limiter: ratelimit.NewRedis(repos.Redis), Redis: rc, Keys: keys,
+			Options: formsservices.Options{
+				DailyLimit: env.Forms.DailyLimit, MinFillSeconds: env.Forms.MinFillSeconds, MaxClockSkew: env.Forms.MaxClockSkew,
+				KeyPerMinute: env.Forms.KeyPerMinute, KeyPerDay: env.Forms.KeyPerDay, DedupeTTL: env.Forms.DedupeTTL,
+			},
 		}),
 	}
 }

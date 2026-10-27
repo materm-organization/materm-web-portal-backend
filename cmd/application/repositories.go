@@ -9,10 +9,12 @@ import (
 
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
 	contentrepositories "github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
+	formsrepositories "github.com/materm-organization/materm-web-portal-backend/modules/forms/repositories"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/cache"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/media"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/rediskeys"
 )
 
 // Repositories holds the shared infrastructure handles. Module repositories (PB-3 and later) are added
@@ -28,6 +30,14 @@ type Repositories struct {
 	// PublicCache is the response cache (PB-4): generation + tag sets in Redis, a direct database read when
 	// Redis is missing or cache.enabled is false.
 	PublicCache *publiccache.Cache
+	// Submissions is the one write the portal makes: forms_submit_form (db.Raw, EXECUTE only), used by P-15.
+	Submissions formsrepositories.SubmissionRepository
+	// RC is Redis as the interface every consumer takes (the cache, the rate limiter, the IP hash, the duplicate
+	// marker). It is a NIL interface when Redis is absent, never a typed-nil *redis.Client (a nil pointer in an
+	// interface is not == nil and would be called).
+	RC redis.Cmdable
+	// Keys names every Redis key under the service prefix (materm-portal:).
+	Keys rediskeys.Keys
 	// Media builds public media URLs from file.path_ip and media.staticPrefix (PB-3).
 	Media *media.Builder
 }
@@ -50,12 +60,17 @@ func SetupRepositories(ctx context.Context, env *bootstrap.Env, rdb *redis.Clien
 		_ = conn.Close()
 		return nil, fmt.Errorf("database role: %w", err)
 	}
+	rc := publiccache.FromClient(rdb)
+	keys := rediskeys.New("")
 	return &Repositories{
 		postgres: conn, DB: db, Redis: rdb, CacheRepo: cache.NewRedisRepository(rdb),
-		Content: contentrepositories.New(db),
-		Media:   media.NewBuilder(media.Config{PathIP: env.File.PathIP, StaticPrefix: env.Media.StaticPrefix}),
+		Content:     contentrepositories.New(db),
+		Submissions: formsrepositories.New(db),
+		RC:          rc,
+		Keys:        keys,
+		Media:       media.NewBuilder(media.Config{PathIP: env.File.PathIP, StaticPrefix: env.Media.StaticPrefix}),
 		PublicCache: publiccache.New(publiccache.Options{
-			Client: publiccache.FromClient(rdb), Enabled: env.Cache.Enabled, TTL: env.Cache.TTL,
+			Client: rc, Keys: keys, Enabled: env.Cache.Enabled, TTL: env.Cache.TTL,
 		}),
 	}, nil
 }

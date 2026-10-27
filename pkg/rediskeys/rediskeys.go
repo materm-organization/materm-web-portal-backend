@@ -74,6 +74,24 @@ func (k Keys) FormDailyRL(slug, ipHash string, day time.Time) string {
 	return k.prefix + "rl:form:" + slug + ":" + ipHash + ":d:" + day.UTC().Format("20060102")
 }
 
+// FormKeyMinuteRL counts every submission made with one portal key (all visitors, all forms) in one UTC
+// minute: materm-portal:rl:form-key:<keyid16>:m:<yyyymmddhhmm> (doc/10 R-020). keyID is the truncated hash that
+// names the key, never the key.
+func (k Keys) FormKeyMinuteRL(keyID string, at time.Time) string {
+	return k.prefix + "rl:form-key:" + keyID + ":m:" + at.UTC().Format("200601021504")
+}
+
+// FormKeyDailyRL is the same counter for a UTC day: materm-portal:rl:form-key:<keyid16>:d:<yyyymmdd>.
+func (k Keys) FormKeyDailyRL(keyID string, at time.Time) string {
+	return k.prefix + "rl:form-key:" + keyID + ":d:" + at.UTC().Format("20060102")
+}
+
+// FormDup is the marker of one submission (visitor, form, content) that makes an identical retry harmless:
+// materm-portal:rl:form:<slug>:<iphash32>:dup:<sha256_32>. contentHash is 32 hex characters of a sha256.
+func (k Keys) FormDup(slug, ipHash, contentHash string) string {
+	return k.prefix + "rl:form:" + slug + ":" + ipHash + ":dup:" + contentHash
+}
+
 // IPSalt is the random daily salt of the IP hash (SETNX, TTL 48 h).
 func (k Keys) IPSalt(day time.Time) string {
 	return k.prefix + "ipsalt:" + day.UTC().Format("20060102")

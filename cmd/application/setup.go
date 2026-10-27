@@ -42,7 +42,7 @@ func Setup(ctx context.Context, app *bootstrap.Application) (*Runtime, error) {
 		CloseRepositories(repos)
 		return nil, err
 	}
-	services := SetupServices(repos, app.Env.Strict())
+	services := SetupServices(repos, app.Env)
 	controllers := SetupControllers(services)
 	keys := portalkey.New(app.Env.Portal.FrontendKeys)
 	reg, api := SetupRouter(app.Fiber, controllers, keys)

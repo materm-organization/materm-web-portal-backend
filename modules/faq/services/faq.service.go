@@ -10,8 +10,8 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
 	"github.com/materm-organization/materm-web-portal-backend/modules/faq/models"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/richtext"
 )
 
 // FaqService serves P-13. locale is already negotiated.
@@ -46,18 +46,14 @@ func (s *faqService) Group(ctx context.Context, locale, key string) (*models.Faq
 			if len(rows) == 0 {
 				return nil, nil, apperror.NotFound()
 			}
-			docs := make([]any, 0, len(rows))
-			for _, r := range rows {
-				docs = append(docs, readkit.DecodeJSON(r.Answer.Bytes()))
-			}
-			links, err := readkit.ResolveLinks(ctx, s.d.Content, locale, docs...)
+			// the answers are built by the shared FAQ builder (the same one as resolved.items of a faq section)
+			links, err := readkit.ResolveLinks(ctx, s.d.Content, locale, assemble.FAQAnswerDocs(rows)...)
 			if err != nil {
 				return nil, nil, err
 			}
-			group := &models.FaqGroup{Locale: locale, GroupKey: key, ResolvedLocale: groupLocale(rows, locale), Items: make([]models.FaqItem, 0, len(rows))}
-			for _, r := range rows {
-				res := richtext.ResolveJSON(r.Answer.Bytes(), richtext.Lite, links.MapResolver)
-				group.Items = append(group.Items, models.FaqItem{ID: r.FAQItemID, Question: r.Question, Answer: res.Doc})
+			group := &models.FaqGroup{
+				Locale: locale, GroupKey: key, ResolvedLocale: groupLocale(rows, locale),
+				Items: assemble.BuildFAQItems(rows, links.MapResolver),
 			}
 			tags := []string{"faq:" + strconv.FormatInt(rows[0].GroupID, 10), "locales"}
 			if links.UsedPages {

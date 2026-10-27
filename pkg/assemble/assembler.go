@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
@@ -326,7 +327,7 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 	}
 	data.Page = PageInfo{
 		ID: p.PageID, PublicID: p.PublicID, Key: p.Key, Template: p.Template, Path: p.Path, IsHome: p.IsHome,
-		ResolvedLocale: p.ResolvedLocale, IsFallback: p.IsFallback, Title: p.Title, UpdatedAt: ISO(p.UpdatedAt), SEO: seo,
+		ResolvedLocale: p.ResolvedLocale, IsFallback: p.IsFallback, Title: p.Title, UpdatedAt: readkit.ISO(p.UpdatedAt), SEO: seo,
 	}
 
 	// 5. media

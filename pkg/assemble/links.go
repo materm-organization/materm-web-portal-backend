@@ -4,16 +4,9 @@ import (
 	"context"
 
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/richtext"
 )
-
-// BlogBasePath is the site path under which posts live ("/blog/<slug>"): the path of the blog page is fixed
-// by the reserved-path rule of cms_pages (`path !~ '^/blog/'`) and by the frontend route. Lists, the blog
-// strip and rich text links all build post hrefs from it.
-const BlogBasePath = "/blog"
-
-// PostHref is the site path of a post.
-func PostHref(slug string) string { return BlogBasePath + "/" + slug }
 
 // PageLookup resolves page ids to published pages (modules/content PageRepository.ByIDs).
 type PageLookup interface {
@@ -73,7 +66,7 @@ func (l *linkTargets) ensure(ctx context.Context, pageIDs, postIDs []int64) erro
 			return err
 		}
 		for _, r := range rows {
-			l.posts[r.PostID] = PostHref(r.Slug)
+			l.posts[r.PostID] = readkit.PostHref(r.Slug)
 		}
 	}
 	return nil
@@ -81,18 +74,6 @@ func (l *linkTargets) ensure(ctx context.Context, pageIDs, postIDs []int64) erro
 
 func (l *linkTargets) resolver() richtext.MapResolver {
 	return richtext.MapResolver{Pages: l.pages, Posts: l.posts}
-}
-
-// NewLinkResolver loads the pages and posts that the link marks of docs (decoded rich text documents, or any
-// decoded JSON containing them) refer to, with one query each, and returns the resolver for richtext.Resolve.
-// FAQ answers and post bodies use it.
-func NewLinkResolver(ctx context.Context, pages PageLookup, posts PostLookup, locale string, docs ...any) (richtext.Resolver, error) {
-	t := newLinkTargets(pages, posts, locale)
-	pageIDs, postIDs := collectDocLinks(docs)
-	if err := t.ensure(ctx, pageIDs, postIDs); err != nil {
-		return nil, err
-	}
-	return t.resolver(), nil
 }
 
 // collectDocLinks gathers the page and post ids that the link marks of docs refer to.

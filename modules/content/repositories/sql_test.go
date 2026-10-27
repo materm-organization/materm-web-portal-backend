@@ -182,8 +182,8 @@ func TestColumnsAndTableOf(t *testing.T) {
 		t.Errorf("%v", cols)
 	}
 	full, _ := Columns(&entities.PublishedPost{})
-	if len(full) != len(cols)+7 {
-		t.Errorf("PublishedPost must add body + 6 detail columns: %d vs %d", len(full), len(cols))
+	if len(full) != len(cols)+6 {
+		t.Errorf("PublishedPost must add body + 5 detail columns (hero_alt is on the card): %d vs %d", len(full), len(cols))
 	}
 	if tn, _ := TableOf(&entities.PublishedPost{}); tn != "v_published_posts" {
 		t.Errorf("table %q", tn)

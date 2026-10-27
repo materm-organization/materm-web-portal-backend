@@ -8,6 +8,7 @@
 package readkit
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -45,18 +46,46 @@ var (
 // MaxSlugLen is the longest post slug.
 const MaxSlugLen = 100
 
-// Negotiate runs ResolveLocale (doc/08 section 2.1) for a GET: ?locale, then Accept-Language, then the
-// default. A bad ?locale is a 422 from localize; a chain that cannot be loaded is a 503.
-func Negotiate(c *fiber.Ctx, p *localize.Provider) (localize.Negotiation, *localize.Chain, error) {
+// ChainSource hands out the locale Chain (localize.Provider implements it).
+type ChainSource interface {
+	Chain(ctx context.Context) (*localize.Chain, error)
+}
+
+// LoadChain returns the active locales' Chain; when they cannot be loaded nothing can be answered: 503.
+func LoadChain(c *fiber.Ctx, p ChainSource) (*localize.Chain, error) {
 	chain, err := p.Chain(c.UserContext())
 	if err != nil {
-		return localize.Negotiation{}, nil, apperror.ServiceUnavailable(err, 0)
+		return nil, apperror.ServiceUnavailable(err, 0)
+	}
+	return chain, nil
+}
+
+// Negotiate runs ResolveLocale (doc/08 section 2.1) for a GET: ?locale, then Accept-Language, then the
+// default. A bad ?locale is a 422 from localize; a chain that cannot be loaded is a 503. The error is an
+// error interface holding a *apperror.Error, never a typed nil.
+func Negotiate(c *fiber.Ctx, p ChainSource) (localize.Negotiation, *localize.Chain, error) {
+	chain, err := LoadChain(c, p)
+	if err != nil {
+		return localize.Negotiation{}, nil, err
 	}
 	neg, aerr := chain.Negotiate(c.Query("locale"), c.Get(fiber.HeaderAcceptLanguage))
 	if aerr != nil {
 		return localize.Negotiation{}, nil, aerr
 	}
 	return neg, chain, nil
+}
+
+// ETag is the weak validator of a body: W/"<first 16 hex of sha256(body)>".
+func ETag(body []byte) string {
+	sum := sha256.Sum256(body)
+	return `W/"` + hex.EncodeToString(sum[:8]) + `"`
+}
+
+// NotFound marks the coming 404 as cacheable for a short time (doc/08 section 2.1) and returns the error to
+// hand back from the handler. The error handler (pkg/apperror) keeps the header.
+func NotFound(c *fiber.Ctx) error {
+	c.Set(fiber.HeaderCacheControl, CacheControlShort)
+	return apperror.NotFound()
 }
 
 // setLanguage writes Content-Language and, when Accept-Language took part, Vary.
@@ -69,7 +98,8 @@ func setLanguage(c *fiber.Ctx, neg localize.Negotiation) {
 	}
 }
 
-// Send answers 200 with body as JSON, an ETag over the exact bytes sent, the cache headers and the language
+// Send answers 200 with body as JSON (the zero Negotiation for a language independent resource: no
+// Content-Language, no Vary), an ETag over the exact bytes sent, the cache headers and the language
 // headers; a matching If-None-Match gets 304 with the same headers and no body.
 func Send(c *fiber.Ctx, neg localize.Negotiation, body any) error {
 	b, err := json.Marshal(body)
@@ -81,8 +111,7 @@ func Send(c *fiber.Ctx, neg localize.Negotiation, body any) error {
 
 // SendBytes is Send over an already encoded body.
 func SendBytes(c *fiber.Ctx, neg localize.Negotiation, b []byte) error {
-	sum := sha256.Sum256(b)
-	etag := `W/"` + hex.EncodeToString(sum[:])[:16] + `"`
+	etag := ETag(b)
 	setLanguage(c, neg)
 	c.Set(fiber.HeaderETag, etag)
 	c.Set(fiber.HeaderCacheControl, CacheControlOK)

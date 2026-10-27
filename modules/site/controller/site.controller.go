@@ -8,9 +8,10 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/modules/site/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble/httpx"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/response"
 )
 
@@ -25,11 +26,11 @@ type SiteCtrl interface {
 
 type siteCtrl struct {
 	svc    services.SiteService
-	chains httpx.ChainSource
+	chains readkit.ChainSource
 }
 
 // NewSiteCtrl builds the controller. chains is the locale provider (localize.Provider).
-func NewSiteCtrl(svc services.SiteService, chains httpx.ChainSource) SiteCtrl {
+func NewSiteCtrl(svc services.SiteService, chains readkit.ChainSource) SiteCtrl {
 	return &siteCtrl{svc: svc, chains: chains}
 }
 
@@ -49,7 +50,7 @@ func (h *siteCtrl) Locales(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, nil, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, localize.Negotiation{}, response.Envelope{Success: true, Data: d})
 }
 
 // P-02 GET /public/settings?locale=&group=brand,footer
@@ -58,7 +59,7 @@ func (h *siteCtrl) Settings(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	neg, err := httpx.Negotiate(c, h.chains)
+	neg, _, err := readkit.Negotiate(c, h.chains)
 	if err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func (h *siteCtrl) Settings(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, &neg, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, neg, response.Envelope{Success: true, Data: d})
 }
 
 // P-03 GET /public/ui-strings?locale=&ns=site,blog
@@ -75,7 +76,7 @@ func (h *siteCtrl) UIStrings(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	neg, err := httpx.Negotiate(c, h.chains)
+	neg, _, err := readkit.Negotiate(c, h.chains)
 	if err != nil {
 		return err
 	}
@@ -83,32 +84,32 @@ func (h *siteCtrl) UIStrings(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, &neg, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, neg, response.Envelope{Success: true, Data: d})
 }
 
 // P-04 GET /public/menus/:key?locale=
 func (h *siteCtrl) Menu(c *fiber.Ctx) error {
 	key := c.Params("key")
 	if len(key) > 64 || !menuPattern.MatchString(key) {
-		return httpx.NotFound(c) // no menu can have this key
+		return readkit.NotFound(c) // no menu can have this key
 	}
-	neg, err := httpx.Negotiate(c, h.chains)
+	neg, _, err := readkit.Negotiate(c, h.chains)
 	if err != nil {
 		return err
 	}
 	d, err := h.svc.Menu(c.UserContext(), neg, key)
 	if errors.Is(err, services.ErrNotFound) {
-		return httpx.NotFound(c)
+		return readkit.NotFound(c)
 	}
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, &neg, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, neg, response.Envelope{Success: true, Data: d})
 }
 
 // P-05 GET /public/site?locale=
 func (h *siteCtrl) Site(c *fiber.Ctx) error {
-	neg, err := httpx.Negotiate(c, h.chains)
+	neg, _, err := readkit.Negotiate(c, h.chains)
 	if err != nil {
 		return err
 	}
@@ -116,7 +117,7 @@ func (h *siteCtrl) Site(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, &neg, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, neg, response.Envelope{Success: true, Data: d})
 }
 
 // csvQuery reads a comma separated query parameter and validates every item; the first bad item is a 422 on

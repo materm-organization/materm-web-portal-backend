@@ -63,14 +63,30 @@ func NewSystemService(d Deps) SystemService {
 	return &systemService{d: d}
 }
 
-// DBPinger returns a PingDB function for a GORM handle.
+// readinessView is the one object /ready reads: v_public_locales is a view the read-only role is granted and
+// every request needs (the locale chain). A base table is never touched (the role cannot read one).
+const readinessView = "v_public_locales"
+
+// DBPinger returns a PingDB function for a GORM handle: the connection answers AND the role can read the public
+// locales view, which is what every content endpoint stands on (a missing view or grant is "not ready", not a
+// 500 on the first request). It does not matter how many rows the view has.
 func DBPinger(db *gorm.DB) func(context.Context) error {
 	return func(ctx context.Context) error {
 		sqlDB, err := db.DB()
 		if err != nil {
 			return err
 		}
-		return sqlDB.PingContext(ctx)
+		if perr := sqlDB.PingContext(ctx); perr != nil {
+			return perr
+		}
+		rows, err := sqlDB.QueryContext(ctx, "SELECT 1 FROM "+readinessView+" LIMIT 1")
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+		}
+		return rows.Err()
 	}
 }
 

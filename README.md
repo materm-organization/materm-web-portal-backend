@@ -2,7 +2,7 @@
 
 # Materm Web Portal Backend
 
-Go backend API for the Materm Web Portal website — built with Fiber v2. It is the **read API** of the public website (doc/08 section 2): it reads published content from PostgreSQL views with a read-only role and is called **only server-to-server** by the portal-frontend with the `X-Portal-Key` header. It never migrates or writes the schema. Today it provides the foundation (error/response envelopes, request id, access log, portal key guard, `/health`, `/ready`); the content modules come with milestone M2.
+Go backend API for the Materm Web Portal website — built with Fiber v2. It is the **read API** of the public website (doc/08 section 2): it reads published content from PostgreSQL views with a read-only role and is called **only server-to-server** by the portal-frontend with the `X-Portal-Key` header. It never migrates or writes the schema. It provides the foundation (error/response envelopes, request id, access log, portal key guard, `/health`, `/ready`) and, since milestone M2, the 16 public read/submit endpoints below (site, pages, seo, blog, gallery, faq, forms). Preview (`/preview/resolve`, PB-11) comes with M4.
 
 ---
 
@@ -111,7 +111,9 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `cache.invalidateChannel` | `materm:cms.invalidate` | Redis pub/sub channel of the invalidation messages |
 | `cache.invalidateMaxAge` | `10m` | oldest `occurred_at` an invalidation message may have (replay protection) |
 | `rateLimit.readPerMinute` | `300` | read ceiling per client |
-| `forms.dailyLimit`, `forms.minFillSeconds`, `forms.maxClockSkew` | `20`, `3`, `10m` | contact form limits |
+| `forms.dailyLimit`, `forms.minFillSeconds`, `forms.maxClockSkew` | `20`, `3`, `10m` | fallbacks of the form's own limits (`rate_limit_daily_max`, `min_fill_seconds`) and how far a `rendered_at` may lie in the future |
+| `forms.keyPerMinute`, `forms.keyPerDay` | `30`, `1000` | submissions of ALL visitors together per portal key (doc/10 R-020: a leaked key plus a random `X-Client-IP` per call must not bypass the per-visitor counters); `keyPerMinute` must not exceed `keyPerDay` |
+| `forms.dedupeTTL` | `120s` | an identical submission (same visitor, form and content) inside this window is answered `received` without a second insert (max `24h`) |
 | `preview.cacheTTL` | `10s` | preview snapshot cache |
 | `site.defaultBaseUrl` | blank | fallback of the `site.base_url` setting |
 
@@ -137,9 +139,11 @@ The server validates its configuration first and refuses to start (naming the ke
 ├── cmd/
 │   ├── application/  # Dependency wiring (setup, repositories, services, controller, router)
 │   └── server/       # Entry point (graceful shutdown)
-├── modules/          # Feature modules (`system` today: /health, /ready)
+├── modules/          # system (/health, /ready); content/ (view read-structs, repositories, readkit = the shared
+│                     # HTTP/date/link helpers); site, pages, seo, blog, gallery, faq, forms (one folder each)
 ├── pkg/              # apperror, response, pagination, requestid, logs, ratelimit, rediskeys, portalkey,
-│                     # routepolicy, cache, testutil, utilities, ...
+│                     # routepolicy, cache, publiccache, localize, media, richtext, assemble (page sections),
+│                     # iphash, clientip, testutil, utilities, ...
 ├── tests/            # Black-box tests (bootstrap DSN)
 ├── config.yaml       # Configuration (keys only in git)
 ├── config.enc.yaml   # Encrypted configuration (stale, see above)
@@ -151,7 +155,7 @@ The server validates its configuration first and refuses to start (naming the ke
 ## API
 
 - **Base path**: `/api/v1` (every route needs `X-Portal-Key`; a path that matches nothing is 401 without it, 404 with it)
-- **Probes** (no key, root level): `GET /health` (liveness), `GET /ready` (readiness: database ok and Redis ok; in dev a missing Redis is `degraded`), aliases `/healthz`, `/readyz`
+- **Probes** (no key, root level): `GET /health` (liveness), `GET /ready` (readiness: the database answers AND the role can read the view `v_public_locales`; Redis down only makes it `200 degraded`, the database down or the view unreadable is `503 down`), aliases `/healthz`, `/readyz`
 - **Errors**: `{success:false, message, code, errors?, request_id}`, identical to the admin backend
 
 | Method | Path | Policy |
@@ -159,7 +163,26 @@ The server validates its configuration first and refuses to start (naming the ke
 | `GET` | `/health`, `/healthz` | public |
 | `GET` | `/ready`, `/readyz` | public |
 
+Public content endpoints (all need `X-Portal-Key`; `?locale=` then `Accept-Language` then the default locale; a 200 carries `Cache-Control`, a weak `ETag` (304 on `If-None-Match`), `Content-Language`, `Vary: Accept-Language` when the header decided):
 
+| Module | Endpoint | Id | Views it reads |
+|---|---|---|---|
+| site | `GET /public/locales` | P-01 | `v_public_locales` |
+| site | `GET /public/settings?group=` | P-02 | `v_public_site_settings`, `v_public_locales` |
+| site | `GET /public/ui-strings?ns=` | P-03 | `v_public_ui_strings` |
+| site | `GET /public/menus/:key` | P-04 | `v_published_menu_items` (+ pages) |
+| site | `GET /public/site` | P-05 | locales, settings, menus, UI strings in one answer |
+| pages | `GET /public/pages/resolve?path=` | P-06 | `v_published_pages`, `v_published_page_sections` and, per section type, posts, albums, FAQ, forms (`pkg/assemble`) |
+| blog | `GET /public/posts` | P-07 | `v_published_posts`, `v_published_categories`, `v_published_post_tags` |
+| blog | `GET /public/posts/:slug` | P-08 | `v_published_posts`, `v_published_post_slugs` (308 to the visitor's slug), `v_published_post_media` |
+| blog | `GET /public/categories`, `GET /public/tags` | P-09, P-10 | `v_published_categories`, `v_published_tags` |
+| gallery | `GET /public/albums`, `GET /public/albums/:key` | P-11, P-12 | `v_published_albums`, `v_published_album_items` |
+| faq | `GET /public/faq/:group_key` | P-13 | `v_published_faq_items` |
+| forms | `GET /public/forms/:slug` | P-14 | `v_published_forms`, `v_published_form_fields` |
+| forms | `POST /public/forms/:slug/submissions` | P-15 | the function `forms_submit_form` (the one write) |
+| seo | `GET /public/sitemap` | P-16 | `v_sitemap` |
+
+Page sections of `GET /public/pages/resolve` get a `resolved` member per section type (`blog_strip`, `gallery_cards`, `photo_story`, `contact_section`, `faq`, `post_list`, ...). P-15 never reveals spam handling (a bot gets the same `200 {"status":"received"}`), rate limits answer 429 with `Retry-After`, and the submission answer is `Cache-Control: no-store`.
 
 ## Makefile Commands
 
@@ -186,6 +209,8 @@ make testdb-up && make test-db   # DB/Redis tests, scratch containers only
 ```
 
 Tests that need PostgreSQL or Redis carry the build tag `dbtest` and run only on the scratch containers of the admin backend repository (`../materm-admin-backend/scripts/testdb.sh`, ports 55433 / 56380); the guards in `pkg/testutil` refuse the database `materm` and ports 5432 / 6379.
+
+The schema of these tests is the reference SQL of the design (`../doc/sql`, built by `pkg/testutil/schemadb`). One test, `TestSeededPagesEqualTheFrontendBundle` (`tests/publicapi`), needs the real web content seed, which only the admin backend can load: prepare a scratch database with the admin repository's `bootstrap.Migrate()` + `bootstrap.Seed`, then run `MATERM_APP_SEEDED_DSN=<its superuser DSN> make test-db`. Without the variable it is skipped (reported as skipped, not passed).
 
 
 

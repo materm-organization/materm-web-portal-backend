@@ -21,7 +21,8 @@ func TestEveryKeyCarriesThePrefix(t *testing.T) {
 			"Gen": k.Gen(), "Inv": k.Inv(), "Cache": k.Cache(3, "page", "en", "abc"), "Tag": k.Tag("pages"), "Locales": k.Locales(),
 			"Preview": k.Preview("deadbeef"), "ReadRL": k.ReadRL("203.0.113.1", now),
 			"FormWindowRL": k.FormWindowRL("contact", "abc", now), "FormDailyRL": k.FormDailyRL("contact", "abc", now),
-			"IPSalt": k.IPSalt(now),
+			"IPSalt": k.IPSalt(now), "FormKeyMinuteRL": k.FormKeyMinuteRL("abcdef0123456789", now),
+			"FormKeyDailyRL": k.FormKeyDailyRL("abcdef0123456789", now), "FormDup": k.FormDup("contact", "i", "h"),
 		} {
 			if !strings.HasPrefix(key, prefix) || key == prefix {
 				t.Errorf("%s(%q) = %q does not carry the prefix", name, prefix, key)
@@ -48,6 +49,9 @@ func TestKeyShapes(t *testing.T) {
 		k.Preview("ab"):               "materm-portal:preview:ab",
 		k.FormDailyRL("c", "i", now):  "materm-portal:rl:form:c:i:d:20261027",
 		k.IPSalt(now):                 "materm-portal:ipsalt:20261027",
+		k.FormKeyMinuteRL("kid", now): "materm-portal:rl:form-key:kid:m:202610271230",
+		k.FormKeyDailyRL("kid", now):  "materm-portal:rl:form-key:kid:d:20261027",
+		k.FormDup("c", "ip", "h32"):   "materm-portal:rl:form:c:ip:dup:h32",
 	}
 	for got, exp := range want {
 		if got != exp {

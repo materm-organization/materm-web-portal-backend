@@ -165,6 +165,9 @@ type PublishedPostCard struct {
 	Excerpt         *string    `gorm:"column:excerpt"`
 	Label           *string    `gorm:"column:label"`
 	LocationLabel   *string    `gorm:"column:location_label"`
+	// HeroAlt is the alt text of the HERO image (cms_post_translations.hero_alt). It describes the card image
+	// only when the card falls back to the hero (TeaserMediaID is nil); the strip and the list use it that way.
+	HeroAlt *string `gorm:"column:hero_alt"`
 }
 
 func (PublishedPostCard) TableName() string { return "v_published_posts" }
@@ -176,7 +179,6 @@ type PublishedPost struct {
 	Body               JSONB   `gorm:"column:body"`
 	GalleryHeading     *string `gorm:"column:gallery_heading"`
 	GalleryDescription *string `gorm:"column:gallery_description"`
-	HeroAlt            *string `gorm:"column:hero_alt"`
 	SEOTitle           *string `gorm:"column:seo_title"`
 	SEODescription     *string `gorm:"column:seo_description"`
 	OGImageID          *int64  `gorm:"column:og_image_id"`

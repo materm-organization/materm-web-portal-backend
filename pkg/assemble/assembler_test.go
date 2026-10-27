@@ -341,21 +341,7 @@ func TestEveryResolverHasASchemaAndEverySchemaAResolver(t *testing.T) {
 	}
 }
 
-func TestFormatDate(t *testing.T) {
-	f := DateFormats{Short: "{month}. {day}.{year}", Months: []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}}
-	// 2026-12-31 20:00 UTC is already 1 January in Vientiane (UTC+7)
-	if got := FormatDate(time.Date(2026, 12, 31, 20, 0, 0, 0, time.UTC), f); got != "Jan. 01.2027" {
-		t.Errorf("got %q", got)
-	}
-	if got := FormatDate(time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC), f); got != "Sep. 05.2026" {
-		t.Errorf("got %q", got)
-	}
-	if got := FormatDate(time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC), DateFormats{}); got != "2026-09-05" {
-		t.Errorf("no pattern: %q", got)
-	}
-}
-
-func TestNewLinkResolverBatchesPagesAndPosts(t *testing.T) {
+func TestLinkTargetsBatchPagesAndPosts(t *testing.T) {
 	h := newHarness(t)
 	set := h.db.Set()
 	doc := map[string]any{"type": "doc", "content": []any{map[string]any{"type": "paragraph", "content": []any{
@@ -363,10 +349,12 @@ func TestNewLinkResolverBatchesPagesAndPosts(t *testing.T) {
 		map[string]any{"type": "text", "text": "b", "marks": []any{map[string]any{"type": "link", "attrs": map[string]any{"post_id": json.Number("1")}}}},
 		map[string]any{"type": "text", "text": "c", "marks": []any{map[string]any{"type": "link", "attrs": map[string]any{"post_id": json.Number("99")}}}},
 	}}}}
-	r, err := NewLinkResolver(context.Background(), set.Pages, set.Posts, "en", doc)
-	if err != nil {
+	lt := newLinkTargets(set.Pages, set.Posts, "en")
+	pageIDs, postIDs := collectDocLinks([]any{doc})
+	if err := lt.ensure(context.Background(), pageIDs, postIDs); err != nil {
 		t.Fatal(err)
 	}
+	r := lt.resolver()
 	if p, ok := r.PageHref(3); !ok || p != "/blog" {
 		t.Errorf("page 3: %q %v", p, ok)
 	}

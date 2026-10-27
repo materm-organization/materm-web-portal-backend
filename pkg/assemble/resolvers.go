@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
+	blogservices "github.com/materm-organization/materm-web-portal-backend/modules/blog/services"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 )
 
 // resolvers holds one resolver per section type key (doc/08 section 2.3.1 "resolved per type"). A type whose
@@ -144,11 +145,15 @@ func resolveBlogStrip(ctx context.Context, e *env, s *sectionIn) (any, error) {
 
 	posts := make([]BlogStripPost, 0, len(picks))
 	for _, p := range picks {
-		c := p.card
+		// the card shape (href, date, date_time, image) is the blog module's: identical to P-07
+		item := blogservices.ItemFromCard(p.card, e.dates)
 		img := BlogStripImage{}
-		if c.CardMediaID != nil {
-			id := *c.CardMediaID
+		if item.Image != nil {
+			id := item.Image.MediaID
 			img.MediaID = &id
+			if item.Image.Alt != nil {
+				img.Alt = *item.Image.Alt
+			}
 		}
 		if p.image != nil {
 			if id, ok := asID(p.image["media_id"]); ok {
@@ -156,18 +161,14 @@ func resolveBlogStrip(ctx context.Context, e *env, s *sectionIn) (any, error) {
 				img.Alt = p.image["alt"]
 			}
 		}
-		excerpt := c.Excerpt
+		excerpt := item.Excerpt
 		if p.excerpt != "" {
 			x := p.excerpt
 			excerpt = &x
 		}
-		var published time.Time
-		if c.PublishedAt != nil {
-			published = *c.PublishedAt
-		}
 		posts = append(posts, BlogStripPost{
-			PostID: c.PostID, Href: PostHref(c.Slug), Label: c.Label, Title: c.Title,
-			Date: FormatDate(published, e.dates), DateTime: ISO(published), Excerpt: excerpt, Image: img,
+			PostID: item.ID, Href: item.Href, Label: item.Label, Title: item.Title,
+			Date: item.Date, DateTime: item.DateTime, Excerpt: excerpt, Image: img,
 		})
 		if len(posts) == blogStripMax {
 			break
@@ -342,7 +343,13 @@ func resolveContactSection(ctx context.Context, e *env, s *sectionIn) (any, erro
 			if ferr != nil {
 				return nil, ferr
 			}
-			form = BuildForm(f, fields)
+			def, berr := BuildForm(*f, fields)
+			if berr != nil {
+				// a form whose json_schema is broken is left out of the section (P-14 answers 500 for it)
+				logs.Error("contact_section: form definition cannot be built", logs.Err(berr))
+			} else {
+				form = def
+			}
 			e.tags.add(fmt.Sprintf("form:%d", f.FormID))
 		}
 	}

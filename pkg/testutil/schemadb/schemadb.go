@@ -60,6 +60,8 @@ type Schema struct {
 
 	roPassword string
 	gormRO     *gorm.DB
+	// clusterDSN is set for a Seeded schema: the connection that created the read-only role and drops it.
+	clusterDSN string
 }
 
 // GormRO returns a GORM handle on the read-only pool. Warn-level logger, parameters hidden.
@@ -112,7 +114,9 @@ func Shared(t testing.TB) *Schema {
 	return shared
 }
 
-// Teardown drops the shared database and its role. Safe to call when nothing was built.
+// Teardown drops the shared database and its role (and the read-only role made for a seeded database, see
+// Seeded; that database itself belongs to whoever prepared it and is left alone). Safe to call when nothing
+// was built.
 func Teardown() {
 	mu.Lock()
 	defer mu.Unlock()
@@ -120,6 +124,116 @@ func Teardown() {
 		shared.close()
 		shared = nil
 	}
+	if seeded != nil {
+		seeded.close()
+		seeded = nil
+	}
+}
+
+// EnvSeededDSN names the environment variable that points the tests at an EXTERNALLY PREPARED scratch database:
+// the one the ADMIN backend builds with its own bootstrap.Migrate() followed by bootstrap.Seed (the real
+// schema, roles, grants and the web content seed of T1.2.5). The portal cannot build that database itself
+// without importing the admin module, so the integration check prepares it and passes its superuser (or owner)
+// DSN here.
+const EnvSeededDSN = "MATERM_APP_SEEDED_DSN"
+
+var (
+	seeded       *Schema
+	seededFailed error
+)
+
+// Seeded returns a Schema over the database named by MATERM_APP_SEEDED_DSN, or skips the test when the variable
+// is unset. The database must live on the scratch cluster: the same guards as everything else here apply
+// (dbtest.Guard on the DSN, dbtest.CheckScratchCluster on the connection: never `materm`, never port 5432,
+// the cluster must carry materm.scratch=on), and the role cms_portal_ro must exist in it (the admin Migrate
+// creates it). Like Shared it hands out Owner (a pool as the DSN's user; used only to count rows) and a RO pool
+// as a throw-away member of cms_portal_ro, so the endpoints are read with exactly the production privileges.
+// Nothing is created in the database except that role, which Teardown drops; the database is never dropped.
+//
+// How the integration check prepares it (documented in tests/publicapi/seed_dbtest_test.go): `make testdb-up`
+// in the admin repository, a scratch database created there, a small Go test or command of the admin
+// repository that runs bootstrap.Migrate() and bootstrap.Seed against it, then
+//
+//	MATERM_APP_SEEDED_DSN=<superuser dsn of that database> make test-db
+func Seeded(t testing.TB) *Schema {
+	t.Helper()
+	dsn := os.Getenv(EnvSeededDSN)
+	if dsn == "" {
+		t.Skipf("%s is not set", EnvSeededDSN)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if seededFailed != nil {
+		t.Fatalf("schemadb: the seeded database could not be opened earlier: %v", seededFailed)
+	}
+	if seeded == nil {
+		s, err := openSeeded(dsn)
+		if err != nil {
+			seededFailed = err
+			if s != nil {
+				s.close()
+			}
+			t.Fatalf("schemadb: %s: %v", EnvSeededDSN, err)
+		}
+		seeded = s
+	}
+	return seeded
+}
+
+func openSeeded(dsn string) (*Schema, error) {
+	if err := dbtest.Guard(dsn); err != nil {
+		return nil, err // the message never contains the DSN
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	s := &Schema{}
+	owner, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return s, fmt.Errorf("open: %v", scrub(err, dsn))
+	}
+	s.Owner = owner
+	s.Owner.SetMaxOpenConns(2)
+	if err = s.Owner.PingContext(ctx); err != nil {
+		return s, fmt.Errorf("connect: %v", scrub(err, dsn))
+	}
+	if err = dbtest.CheckScratchCluster(ctx, s.Owner); err != nil {
+		return s, err
+	}
+	var n int
+	if err = s.Owner.QueryRowContext(ctx, `select count(*) from pg_roles where rolname = $1`, portalRole).Scan(&n); err != nil || n != 1 {
+		return s, fmt.Errorf("the role %s does not exist in this cluster: is this the database the admin Migrate() built?", portalRole)
+	}
+
+	s.ROUser = "materm_test_ro_" + randomHex(5)
+	s.roPassword = randomHex(16)
+	s.clusterDSN = dsn
+	for _, stmt := range []string{
+		fmt.Sprintf(`create role %q login inherit password '%s'`, s.ROUser, s.roPassword),
+		fmt.Sprintf(`grant %s to %q`, portalRole, s.ROUser),
+		fmt.Sprintf(`alter role %q set statement_timeout = '3s'`, s.ROUser),
+	} {
+		if _, err = s.Owner.ExecContext(ctx, stmt); err != nil {
+			return s, fmt.Errorf("create read-only role: %v", scrub(err, s.roPassword))
+		}
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return s, err
+	}
+	u.User = url.UserPassword(s.ROUser, s.roPassword)
+	s.RODSN = u.String()
+	if err = dbtest.Guard(s.RODSN); err != nil {
+		return s, err
+	}
+	if s.RO, err = sql.Open("pgx", s.RODSN); err != nil {
+		return s, fmt.Errorf("open read-only pool: %v", scrub(err, s.RODSN))
+	}
+	s.RO.SetMaxOpenConns(8)
+	if err = s.RO.PingContext(ctx); err != nil {
+		return s, fmt.Errorf("connect as the read-only role: %v", scrub(err, s.RODSN))
+	}
+	return s, nil
 }
 
 // referenceDir finds ../doc/sql relative to the module root (the directory that holds go.mod).
@@ -329,18 +443,26 @@ func (s *Schema) close() {
 	if s.RO != nil {
 		_ = s.RO.Close()
 	}
+	if s.DB == nil { // a Seeded schema: drop the role it created, never the database
+		if s.Owner != nil && s.clusterDSN != "" && strings.HasPrefix(s.ROUser, "materm_test_ro_") {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			_, _ = s.Owner.ExecContext(ctx, fmt.Sprintf(`drop role if exists %q`, s.ROUser)) //nolint:gosec // "materm_test_ro_" + random hex
+			cancel()
+		}
+		if s.Owner != nil {
+			_ = s.Owner.Close()
+		}
+		return
+	}
 	if s.Owner != nil {
 		_ = s.Owner.Close()
-	}
-	if s.DB == nil {
-		return
 	}
 	cluster := s.DB.ClusterDSN()
 	s.DB.Drop()
 	if s.ROUser != "" && strings.HasPrefix(s.ROUser, "materm_test_ro_") {
 		if db, err := sql.Open("pgx", cluster); err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			_, _ = db.ExecContext(ctx, fmt.Sprintf(`drop role if exists %q`, s.ROUser))
+			_, _ = db.ExecContext(ctx, fmt.Sprintf(`drop role if exists %q`, s.ROUser)) //nolint:gosec // "materm_test_ro_" + random hex
 			cancel()
 			_ = db.Close()
 		}

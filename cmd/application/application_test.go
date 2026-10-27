@@ -12,6 +12,7 @@ import (
 
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
 	systemservices "github.com/materm-organization/materm-web-portal-backend/modules/system/services"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
 )
@@ -28,7 +29,11 @@ func wire(t *testing.T, keys []string, redisUp bool) (*fiber.App, *routepolicy.R
 	if redisUp {
 		rp = up
 	}
-	svc := &Services{System: systemservices.NewSystemService(systemservices.Deps{PingDB: up, PingRedis: rp, Strict: true})}
+	svc := stubServices()
+	svc.System = systemservices.NewSystemService(systemservices.Deps{PingDB: up, PingRedis: rp, Strict: true})
+	svc.Locales = localize.NewProvider(func(context.Context) ([]localize.Locale, error) {
+		return []localize.Locale{{Code: "la", IsDefault: true}, {Code: "en", FallbackCode: "la"}}, nil
+	}, localize.DefaultProviderTTL)
 	reg, api := SetupRouter(app, SetupControllers(svc), portalkey.New(keys))
 	return app, reg, api
 }
@@ -67,7 +72,7 @@ func TestEveryRouteDeclaresAPolicy(t *testing.T) {
 func TestRegisteredPoliciesAreEnforced(t *testing.T) {
 	app, reg, _ := wire(t, []string{testKey}, true)
 	for _, e := range reg.Entries() {
-		path := strings.NewReplacer(":id", "1", ":slug", "x", ":key", "x", ":code", "en").Replace(e.Path)
+		path := strings.NewReplacer(":id", "1", ":slug", "x", ":key", "x", ":group_key", "x", ":code", "en").Replace(e.Path)
 		without, _ := req(t, app, e.Method, path, nil)
 		wrong, _ := req(t, app, e.Method, path, map[string]string{portalkey.Header: "wrong"})
 		switch e.Policy.Kind {
@@ -148,5 +153,37 @@ func TestModuleRouteOnAPIGroup(t *testing.T) {
 	}
 	if _, ok := reg.Lookup("GET", "/api/v1/public/ping"); !ok {
 		t.Error("the route is not in the registry")
+	}
+}
+
+// The 16 public endpoints of milestone M2 (doc/05 P-01 ... P-16) are all mounted, each with the PortalKey
+// policy. The list is the contract: a route that disappears (or one that appears without being added here and
+// to the README table) fails this test.
+func TestAllPublicEndpointsAreMounted(t *testing.T) {
+	_, reg, _ := wire(t, []string{testKey}, true)
+	want := []string{
+		"GET /api/v1/public/locales", "GET /api/v1/public/settings", "GET /api/v1/public/ui-strings",
+		"GET /api/v1/public/menus/:key", "GET /api/v1/public/site", "GET /api/v1/public/pages/resolve",
+		"GET /api/v1/public/posts", "GET /api/v1/public/posts/:slug", "GET /api/v1/public/categories", "GET /api/v1/public/tags",
+		"GET /api/v1/public/albums", "GET /api/v1/public/albums/:key", "GET /api/v1/public/faq/:group_key",
+		"GET /api/v1/public/forms/:slug", "POST /api/v1/public/forms/:slug/submissions", "GET /api/v1/public/sitemap",
+	}
+	got := map[string]bool{}
+	for _, e := range reg.Entries() {
+		if strings.HasPrefix(e.Path, "/api/v1") {
+			got[e.Method+" "+e.Path] = true
+			if e.Policy.Kind != routepolicy.KindPortalKey {
+				t.Errorf("%s %s: %v, want PortalKey", e.Method, e.Path, e.Policy.Kind)
+			}
+		}
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("route %s is not mounted", w)
+		}
+		delete(got, w)
+	}
+	for extra := range got {
+		t.Errorf("route %s is mounted but not in the expected list", extra)
 	}
 }

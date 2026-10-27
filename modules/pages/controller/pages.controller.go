@@ -7,9 +7,9 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/modules/pages/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble/httpx"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/response"
 )
 
@@ -20,11 +20,11 @@ type PagesCtrl interface {
 
 type pagesCtrl struct {
 	svc    services.PageService
-	chains httpx.ChainSource
+	chains readkit.ChainSource
 }
 
 // NewPagesCtrl builds the controller. chains is the locale provider (localize.Provider).
-func NewPagesCtrl(svc services.PageService, chains httpx.ChainSource) PagesCtrl {
+func NewPagesCtrl(svc services.PageService, chains readkit.ChainSource) PagesCtrl {
 	return &pagesCtrl{svc: svc, chains: chains}
 }
 
@@ -44,16 +44,16 @@ func (h *pagesCtrl) Resolve(c *fiber.Ctx) error {
 		return apperror.Validation(apperror.FieldError{In: apperror.InQuery, Path: "/path", Code: "invalid_format",
 			Params: map[string]any{"pattern": PathPattern.String(), "max": maxPathLen}})
 	}
-	neg, err := httpx.Negotiate(c, h.chains)
+	neg, _, err := readkit.Negotiate(c, h.chains)
 	if err != nil {
 		return err
 	}
 	d, err := h.svc.Resolve(c.UserContext(), neg, path)
 	if errors.Is(err, services.ErrNotFound) {
-		return httpx.NotFound(c)
+		return readkit.NotFound(c)
 	}
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, &neg, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, neg, response.Envelope{Success: true, Data: d})
 }

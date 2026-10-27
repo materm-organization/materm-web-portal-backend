@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/modules/forms/models"
 	formsrepositories "github.com/materm-organization/materm-web-portal-backend/modules/forms/repositories"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/iphash"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/ratelimit"
@@ -712,5 +714,69 @@ func TestBuildDefinitionRefusesABrokenSchema(t *testing.T) {
 	f.JSONSchema = entities.JSONB(`[1,2]`)
 	if _, err := BuildDefinition(f, nil); err == nil {
 		t.Fatal("a schema that is not an object must be refused")
+	}
+}
+
+// P-14 and `resolved.form` of a contact_section are built by the same function; the only difference is
+// min_fill_seconds, which only P-14 carries. The two shapes are pinned here so that they cannot drift.
+func TestP14ShapeIsTheSharedDefinitionPlusMinFillSeconds(t *testing.T) {
+	f := contactForm()
+	f.ResolvedLocale, f.Title, f.SubmitLabel = "en", "Send a message", "Send message"
+	fields := []entities.PublishedFormField{{FieldKey: "name", Label: "Full name"}}
+
+	p14, err := BuildDefinition(f, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := assemble.BuildForm(f, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asMap := func(v any) map[string]any {
+		b, _ := json.Marshal(v)
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	p14m, sharedm := asMap(p14), asMap(shared)
+
+	if _, has := sharedm["min_fill_seconds"]; has {
+		t.Error("resolved.form must not carry min_fill_seconds")
+	}
+	if got, ok := p14m["min_fill_seconds"].(float64); !ok || got != 3 {
+		t.Errorf("P-14 must carry min_fill_seconds: %v", p14m["min_fill_seconds"])
+	}
+	delete(p14m, "min_fill_seconds")
+	a, _ := json.Marshal(p14m)
+	b, _ := json.Marshal(sharedm)
+	if string(a) != string(b) {
+		t.Errorf("P-14 (minus min_fill_seconds) and resolved.form differ:\n%s\n%s", a, b)
+	}
+	// the exact member set of the shared shape
+	var keys []string
+	for k := range sharedm {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	want := "description,fields,honeypot_field,messages,resolved_locale,slug,submit_label,sending_label,success,success_redirect_url,title"
+	wantKeys := strings.Split(want, ",")
+	sort.Strings(wantKeys)
+	if strings.Join(keys, ",") != strings.Join(wantKeys, ",") {
+		t.Errorf("members %v, want %v", keys, wantKeys)
+	}
+}
+
+func TestBuildDefinitionStripsXError(t *testing.T) {
+	f := contactForm()
+	f.JSONSchema = entities.JSONB(`{"type":"object","required":["name"],"properties":{"name":{"type":"string","x-error":{"required":"name.required"},"x-pii":true}}}`)
+	f.FieldOrder = entities.StringArray{"name"}
+	def, err := BuildDefinition(f, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := def.Fields[0].Schema["x-error"]; has {
+		t.Error("x-error leaked")
 	}
 }

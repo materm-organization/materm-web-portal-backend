@@ -2,48 +2,24 @@
 // the frontend loader, src/lib/cms/types.ts: FormDefinition).
 package models
 
-// FormDefinition is the data of P-14: what the frontend needs to render a form. It never carries recipients,
-// retention settings, rate-limit settings or payload limits (those stay on the server), and `x-pii` and
-// `x-error` are removed from the field schemas. MinFillSeconds is additive to the frontend type (the minimum
-// time before a submission is accepted as human; the server action may use it to explain a refusal).
+import "github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
+
+// FormDefinition is the data of P-14: what the frontend needs to render a form. The shape is assemble.FormDefinition
+// (the one builder, shared with `resolved.form` of a contact_section) plus MinFillSeconds, which belongs to P-14
+// only (the minimum time before a submission is accepted as human; the server action may use it to explain a
+// refusal). It never carries recipients, retention settings, rate-limit settings or payload limits, and
+// `x-pii` and `x-error` are removed from the field schemas.
 type FormDefinition struct {
-	Slug               string            `json:"slug"`
-	ResolvedLocale     string            `json:"resolved_locale"`
-	Title              string            `json:"title"`
-	Description        string            `json:"description"`
-	SubmitLabel        string            `json:"submit_label"`
-	SendingLabel       string            `json:"sending_label"`
-	Success            FormSuccess       `json:"success"`
-	Messages           map[string]string `json:"messages"`
-	HoneypotField      string            `json:"honeypot_field"`
-	MinFillSeconds     int               `json:"min_fill_seconds"`
-	Fields             []FormField       `json:"fields"`
-	SuccessRedirectURL *string           `json:"success_redirect_url"`
+	assemble.FormDefinition
+	MinFillSeconds int `json:"min_fill_seconds"`
 }
 
-// FormSuccess is the thank-you text.
-type FormSuccess struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	AgainLabel  string `json:"again_label"`
-}
-
-// FormField is one field of the definition, in display order.
-type FormField struct {
-	Key         string         `json:"key"`
-	Required    bool           `json:"required"`
-	Schema      map[string]any `json:"schema"`
-	Label       string         `json:"label"`
-	Placeholder *string        `json:"placeholder"`
-	Help        *string        `json:"help"`
-	Options     []FormOption   `json:"options,omitempty"`
-}
-
-// FormOption is a choice of an enum field.
-type FormOption struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
-}
+// FormSuccess, FormField and FormOption are the shared shapes.
+type (
+	FormSuccess = assemble.FormSuccess
+	FormField   = assemble.FormField
+	FormOption  = assemble.FormOption
+)
 
 // SubmissionRequest is the body of P-15 (doc/08 section 6.2). `rendered_at` is additive (the instant the
 // server action rendered the form, RFC 3339): it lets the server apply forms.maxClockSkew; it may be absent.

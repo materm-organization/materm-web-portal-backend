@@ -6,6 +6,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
 	"github.com/materm-organization/materm-web-portal-backend/modules/seo/models"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
@@ -50,7 +51,7 @@ func (s *seoService) Sitemap(ctx context.Context, defaultLocale string) (*models
 			for _, r := range rows {
 				e := models.SitemapEntry{Kind: r.Kind, EntityID: r.EntityID, Path: r.Path}
 				if r.Lastmod != nil {
-					e.Lastmod = assemble.ISO(*r.Lastmod)
+					e.Lastmod = readkit.ISO(*r.Lastmod)
 				}
 				entries = append(entries, e)
 			}

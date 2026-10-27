@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble/httpx"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/media"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/testutil/seedfake"
@@ -53,7 +53,7 @@ func TestHeadersOfASuccessfulRead(t *testing.T) {
 		t.Fatalf("%d %s", r.Status, r.Body)
 	}
 	h := r.Header
-	if h.Get("Cache-Control") != httpx.CacheControlOK {
+	if h.Get("Cache-Control") != readkit.CacheControlOK {
 		t.Errorf("Cache-Control %q", h.Get("Cache-Control"))
 	}
 	if etag := h.Get("ETag"); len(etag) != len(`W/"0123456789abcdef"`) || etag[:3] != `W/"` {
@@ -108,7 +108,7 @@ func TestConditionalGet(t *testing.T) {
 			t.Errorf("%s: the ETag must be stable: %q vs %q", target, again.Header.Get("ETag"), etag)
 		}
 		nm := app.Get(t, target, "If-None-Match: "+etag)
-		if nm.Status != http.StatusNotModified || len(nm.Body) != 0 || nm.Header.Get("ETag") != etag || nm.Header.Get("Cache-Control") != httpx.CacheControlOK {
+		if nm.Status != http.StatusNotModified || len(nm.Body) != 0 || nm.Header.Get("ETag") != etag || nm.Header.Get("Cache-Control") != readkit.CacheControlOK {
 			t.Errorf("%s: If-None-Match: %d body=%d %v", target, nm.Status, len(nm.Body), nm.Header)
 		}
 		if other := app.Get(t, target, `If-None-Match: W/"0000000000000000"`); other.Status != 200 {
@@ -149,11 +149,11 @@ func TestErrors(t *testing.T) {
 		if r.Status != c.status || r.Code() != c.code {
 			t.Errorf("%s: %d %s, want %d %s (%s)", c.name, r.Status, r.Code(), c.status, c.code, r.Body)
 		}
-		if c.status == 404 && r.Header.Get("Cache-Control") != httpx.CacheControlNotFound {
+		if c.status == 404 && r.Header.Get("Cache-Control") != readkit.CacheControlShort {
 			t.Errorf("%s: a 404 is cacheable for a short time, got %q", c.name, r.Header.Get("Cache-Control"))
 		}
 		if c.status == 422 {
-			if r.Header.Get("Cache-Control") != httpx.CacheControlNone {
+			if r.Header.Get("Cache-Control") != readkit.CacheControlNone {
 				t.Errorf("%s: a 422 must not be cached, got %q", c.name, r.Header.Get("Cache-Control"))
 			}
 			errs, _ := r.JSON()["errors"].([]any)
@@ -226,7 +226,7 @@ func TestInfrastructureFailuresAreNotCachedAndNotLeaked(t *testing.T) {
 	set.Pages = failingPages{set.Pages}
 	app := wire(t, set, publiccache.New(publiccache.Options{}), media.NewBuilder(media.Config{}), "").App
 	r := app.Get(t, "/api/v1/public/pages/resolve?path=/")
-	if r.Status != http.StatusInternalServerError || r.Code() != "INTERNAL_ERROR" || r.Header.Get("Cache-Control") != httpx.CacheControlNone {
+	if r.Status != http.StatusInternalServerError || r.Code() != "INTERNAL_ERROR" || r.Header.Get("Cache-Control") != readkit.CacheControlNone {
 		t.Errorf("repository failure: %d %s %q", r.Status, r.Code(), r.Header.Get("Cache-Control"))
 	}
 	if strings.Contains(string(r.Body), "secret-host") {
@@ -238,7 +238,7 @@ func TestInfrastructureFailuresAreNotCachedAndNotLeaked(t *testing.T) {
 	app = wire(t, set, publiccache.New(publiccache.Options{}), media.NewBuilder(media.Config{}), "").App
 	for _, target := range []string{"/api/v1/public/pages/resolve?path=/", "/api/v1/public/site", "/api/v1/public/sitemap", "/api/v1/public/locales"} {
 		r = app.Get(t, target)
-		if r.Status < 500 || r.Header.Get("Cache-Control") != httpx.CacheControlNone || strings.Contains(string(r.Body), "secret-host") {
+		if r.Status < 500 || r.Header.Get("Cache-Control") != readkit.CacheControlNone || strings.Contains(string(r.Body), "secret-host") {
 			t.Errorf("%s with the locales unavailable: %d %q %s", target, r.Status, r.Header.Get("Cache-Control"), r.Body)
 		}
 	}

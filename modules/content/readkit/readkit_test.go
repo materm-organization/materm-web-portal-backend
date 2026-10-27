@@ -1,6 +1,7 @@
 package readkit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -206,5 +207,62 @@ func TestPostHrefAndPatterns(t *testing.T) {
 		if KeyPattern.MatchString(s) != want {
 			t.Errorf("key %q", s)
 		}
+	}
+}
+
+func TestETagIsWeakAndStable(t *testing.T) {
+	a, b := ETag([]byte(`{"a":1}`)), ETag([]byte(`{"a":1}`))
+	if a != b || len(a) != len(`W/"0123456789abcdef"`) || a[:3] != `W/"` {
+		t.Errorf("etag %q", a)
+	}
+	if ETag([]byte(`{"a":2}`)) == a {
+		t.Error("different bodies must differ")
+	}
+}
+
+type chainSource struct {
+	c   *localize.Chain
+	err error
+}
+
+func (p chainSource) Chain(context.Context) (*localize.Chain, error) { return p.c, p.err }
+
+func TestNegotiateNotFoundAndLanguageIndependentSend(t *testing.T) {
+	chain, err := localize.NewChain([]localize.Locale{{Code: "la", IsDefault: true}, {Code: "en", FallbackCode: "la"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := portalapp.New()
+	a.API.Get("/x", routepolicy.PortalKey(), Guard(func(c *fiber.Ctx) error {
+		neg, _, err := Negotiate(c, chainSource{c: chain})
+		if err != nil {
+			return err
+		}
+		return Send(c, neg, OKBody(map[string]string{"locale": neg.Code}))
+	}))
+	a.API.Get("/plain", routepolicy.PortalKey(), Guard(func(c *fiber.Ctx) error { return Send(c, localize.Negotiation{}, OKBody(1)) }))
+	a.API.Get("/missing", routepolicy.PortalKey(), Guard(NotFound))
+	a.API.Get("/down", routepolicy.PortalKey(), Guard(func(c *fiber.Ctx) error {
+		_, _, err := Negotiate(c, chainSource{err: errors.New("db down")})
+		return err
+	}))
+
+	if r := a.Get(t, "/api/v1/x?locale=en", nil); r.Status != 200 || r.Header.Get("Content-Language") != "en" || r.Header.Get("Vary") != "" {
+		t.Errorf("?locale: %d %v", r.Status, r.Header)
+	}
+	if r := a.Get(t, "/api/v1/x", map[string]string{"Accept-Language": "lo-LA,en;q=0.5"}); r.Header.Get("Content-Language") != "lo" || r.Header.Get("Vary") != "Accept-Language" {
+		t.Errorf("Accept-Language: %v", r.Header)
+	}
+	if r := a.Get(t, "/api/v1/x?locale=EN_us", nil); r.Status != 422 || r.Header.Get("Cache-Control") != CacheControlNone {
+		t.Errorf("bad locale: %d %v", r.Status, r.Header)
+	}
+	if r := a.Get(t, "/api/v1/plain", nil); r.Header.Get("Content-Language") != "" || r.Header.Get("Vary") != "" {
+		t.Errorf("language independent: %v", r.Header)
+	}
+	if r := a.Get(t, "/api/v1/missing", nil); r.Status != 404 || r.Header.Get("Cache-Control") != CacheControlShort {
+		t.Errorf("404: %d %v", r.Status, r.Header)
+	}
+	if r := a.Get(t, "/api/v1/down", nil); r.Status != 503 || r.Header.Get("Cache-Control") != CacheControlNone {
+		t.Errorf("chain down: %d %v", r.Status, r.Header)
 	}
 }

@@ -176,6 +176,12 @@ type FormsConfig struct {
 	DailyLimit     int           `mapstructure:"dailyLimit"`
 	MinFillSeconds int           `mapstructure:"minFillSeconds"`
 	MaxClockSkew   time.Duration `mapstructure:"maxClockSkew"`
+	// KeyPerMinute / KeyPerDay cap the submissions of ALL visitors together per portal key (doc/10 R-020: a
+	// leaked key plus a random X-Client-IP per call defeats the per-visitor counters).
+	KeyPerMinute int `mapstructure:"keyPerMinute"`
+	KeyPerDay    int `mapstructure:"keyPerDay"`
+	// DedupeTTL is how long an identical submission of the same visitor counts as a retry of the first one.
+	DedupeTTL time.Duration `mapstructure:"dedupeTTL"`
 }
 
 // PreviewConfig: CacheTTL is how long a consumed preview snapshot is kept in Redis.
@@ -224,6 +230,9 @@ const (
 	defaultDailyLimit    = 20
 	defaultMinFill       = 3
 	defaultMaxClockSkew  = 10 * time.Minute
+	defaultKeyPerMinute  = 30
+	defaultKeyPerDay     = 1000
+	defaultDedupeTTL     = 120 * time.Second
 	defaultPreviewTTL    = 10 * time.Second
 
 	// DefaultInvalidateChannel equals publiccache.DefaultChannel (a test keeps them in step; bootstrap does not
@@ -252,6 +261,9 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("forms.dailyLimit", defaultDailyLimit)
 	v.SetDefault("forms.minFillSeconds", defaultMinFill)
 	v.SetDefault("forms.maxClockSkew", defaultMaxClockSkew)
+	v.SetDefault("forms.keyPerMinute", defaultKeyPerMinute)
+	v.SetDefault("forms.keyPerDay", defaultKeyPerDay)
+	v.SetDefault("forms.dedupeTTL", defaultDedupeTTL)
 	v.SetDefault("preview.cacheTTL", defaultPreviewTTL)
 	v.SetDefault("site.defaultBaseUrl", "")
 }
@@ -312,6 +324,15 @@ func (e *Env) Defaults() {
 	}
 	if e.Forms.MaxClockSkew <= 0 {
 		e.Forms.MaxClockSkew = defaultMaxClockSkew
+	}
+	if e.Forms.KeyPerMinute <= 0 {
+		e.Forms.KeyPerMinute = defaultKeyPerMinute
+	}
+	if e.Forms.KeyPerDay <= 0 {
+		e.Forms.KeyPerDay = defaultKeyPerDay
+	}
+	if e.Forms.DedupeTTL <= 0 {
+		e.Forms.DedupeTTL = defaultDedupeTTL
 	}
 	if e.Preview.CacheTTL <= 0 {
 		e.Preview.CacheTTL = defaultPreviewTTL
@@ -409,6 +430,12 @@ func (e *Env) Validate() (warnings []string, err error) {
 	}
 	if e.Forms.MaxClockSkew > time.Hour {
 		warn("forms.maxClockSkew: longer than 1h weakens the rendered_at check")
+	}
+	if e.Forms.KeyPerMinute > e.Forms.KeyPerDay {
+		fail("forms.keyPerMinute: must not exceed forms.keyPerDay")
+	}
+	if e.Forms.DedupeTTL > 24*time.Hour {
+		fail("forms.dedupeTTL: at most 24h (an identical message sent again after that is a new submission)")
 	}
 
 	if len(bad) > 0 {

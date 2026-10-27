@@ -137,6 +137,9 @@ func ItemFromCard(c entities.PublishedPostCard, f readkit.DateFormats) models.Po
 	}
 	if c.CardMediaID != nil {
 		it.Image = &models.ImageRef{MediaID: *c.CardMediaID}
+		if c.TeaserMediaID == nil { // the card shows the hero, so the hero's alt is this placement's alt
+			it.Image.Alt = c.HeroAlt
+		}
 	}
 	return it
 }

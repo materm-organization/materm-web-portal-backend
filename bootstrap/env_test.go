@@ -126,6 +126,9 @@ func TestEnvOverridesBlankTemplate(t *testing.T) {
 	t.Setenv("FORMS_DAILYLIMIT", "7")
 	t.Setenv("FORMS_MINFILLSECONDS", "5")
 	t.Setenv("FORMS_MAXCLOCKSKEW", "1m")
+	t.Setenv("FORMS_KEYPERMINUTE", "11")
+	t.Setenv("FORMS_KEYPERDAY", "222")
+	t.Setenv("FORMS_DEDUPETTL", "45s")
 	t.Setenv("PREVIEW_CACHETTL", "30s")
 	t.Setenv("SITE_DEFAULTBASEURL", "https://materm.example.test")
 	t.Setenv("REDIS_CLEARONSTART", "true")
@@ -159,7 +162,7 @@ func TestEnvOverridesBlankTemplate(t *testing.T) {
 	if env.RateLimit.ReadPerMinute != 120 {
 		t.Errorf("rateLimit: %+v", env.RateLimit)
 	}
-	if f := env.Forms; f.DailyLimit != 7 || f.MinFillSeconds != 5 || f.MaxClockSkew != time.Minute {
+	if f := env.Forms; f.DailyLimit != 7 || f.MinFillSeconds != 5 || f.MaxClockSkew != time.Minute || f.KeyPerMinute != 11 || f.KeyPerDay != 222 || f.DedupeTTL != 45*time.Second {
 		t.Errorf("forms: %+v", f)
 	}
 	if env.Preview.CacheTTL != 30*time.Second || env.Site.DefaultBaseURL != "https://materm.example.test" || !env.Redis.ClearOnStart {
@@ -189,7 +192,7 @@ func TestDefaults(t *testing.T) {
 	if env.Media.StaticPrefix != "static/" || !env.Cache.Enabled || env.Cache.TTL != 24*time.Hour || env.RateLimit.ReadPerMinute != 300 {
 		t.Errorf("media/cache/rateLimit: %+v %+v %+v", env.Media, env.Cache, env.RateLimit)
 	}
-	if f := env.Forms; f.DailyLimit != 20 || f.MinFillSeconds != 3 || f.MaxClockSkew != 10*time.Minute {
+	if f := env.Forms; f.DailyLimit != 20 || f.MinFillSeconds != 3 || f.MaxClockSkew != 10*time.Minute || f.KeyPerMinute != 30 || f.KeyPerDay != 1000 || f.DedupeTTL != 120*time.Second {
 		t.Errorf("forms: %+v", f)
 	}
 	if env.Preview.CacheTTL != 10*time.Second || env.Site.DefaultBaseURL != "" || env.File.PathIP != "" {
@@ -234,6 +237,8 @@ func TestValidateFailFast(t *testing.T) {
 		"cors no scheme":  {func(e *Env) { e.Server.CORSOrigins = []string{"a.test"} }, "origin like"},
 		"path_ip":         {func(e *Env) { e.File.PathIP = "ftp://x" }, "file.path_ip"},
 		"base url":        {func(e *Env) { e.Site.DefaultBaseURL = "not a url" }, "site.defaultBaseUrl"},
+		"key caps":        {func(e *Env) { e.Forms.KeyPerMinute, e.Forms.KeyPerDay = 50, 10 }, "forms.keyPerMinute"},
+		"dedupe ttl":      {func(e *Env) { e.Forms.DedupeTTL = 48 * time.Hour }, "forms.dedupeTTL"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

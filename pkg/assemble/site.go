@@ -4,16 +4,14 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 )
 
-// DateFormats is v_public_locales.date_formats: a pattern with {month} {day} {year} and the month names.
-type DateFormats struct {
-	Short  string   `json:"short"`
-	Months []string `json:"months"`
-}
+// DateFormats is v_public_locales.date_formats. There is ONE implementation of it (readkit.DateFormats), shared
+// with the blog module, so a date reads the same in P-07, P-08 and resolved.posts.
+type DateFormats = readkit.DateFormats
 
 // LocaleInfo is one entry of P-01 (and of data.locales of P-05), the shape the frontend's LocaleInfo expects.
 type LocaleInfo struct {
@@ -56,32 +54,6 @@ func DateFormatFor(locales []LocaleInfo, chain []string) DateFormats {
 	}
 	return DateFormats{}
 }
-
-// siteZone is the time zone dates are shown in (BR-32: Asia/Vientiane, UTC+7, no daylight saving). A fixed
-// zone, so a container without tzdata behaves the same.
-var siteZone = time.FixedZone("Asia/Vientiane", 7*3600)
-
-// FormatDate renders t with the short pattern of the locale ("{month}. {day}.{year}" -> "Sep. 05.2026") in the
-// site's time zone. Without a pattern it returns the date as YYYY-MM-DD.
-func FormatDate(t time.Time, f DateFormats) string {
-	d := t.In(siteZone)
-	if f.Short == "" {
-		return d.Format("2006-01-02")
-	}
-	month := ""
-	if m := int(d.Month()) - 1; m >= 0 && m < len(f.Months) {
-		month = f.Months[m]
-	}
-	day := strconv.Itoa(d.Day())
-	if len(day) < 2 {
-		day = "0" + day
-	}
-	r := strings.NewReplacer("{month}", month, "{day}", day, "{year}", strconv.Itoa(d.Year()))
-	return r.Replace(f.Short)
-}
-
-// ISO renders an instant as the RFC 3339 UTC string of the API ("2026-09-05T00:00:00Z").
-func ISO(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 // Settings is data.settings of P-02 / P-05: group -> key -> value. A localised setting is already one string
 // (the view resolved the language), a media setting is the media id (or null), the rest is the JSON value.

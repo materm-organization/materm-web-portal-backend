@@ -12,6 +12,7 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/modules/forms/routes"
 	"github.com/materm-organization/materm-web-portal-backend/modules/forms/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/testutil/portalapp"
@@ -192,7 +193,7 @@ func TestSubmitLocaleNegotiation(t *testing.T) {
 }
 
 func TestDefinitionIsCacheableAndPolicyIsEnforced(t *testing.T) {
-	a := newApp(&fakeService{defn: &models.FormDefinition{Slug: "contact", Fields: []models.FormField{}}})
+	a := newApp(&fakeService{defn: &models.FormDefinition{FormDefinition: assemble.FormDefinition{Slug: "contact", Fields: []models.FormField{}}}})
 	r := a.Get(t, "/api/v1/public/forms/contact?locale=en", nil)
 	if r.Status != 200 || r.Header.Get("ETag") == "" || r.Header.Get("Content-Language") != "en" {
 		t.Fatalf("%d %v", r.Status, r.Header)

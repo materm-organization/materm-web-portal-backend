@@ -4,8 +4,9 @@ package controller
 import (
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/materm-organization/materm-web-portal-backend/modules/content/readkit"
 	"github.com/materm-organization/materm-web-portal-backend/modules/seo/services"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble/httpx"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/response"
 )
 
@@ -16,18 +17,18 @@ type SEOCtrl interface {
 
 type seoCtrl struct {
 	svc    services.SEOService
-	chains httpx.ChainSource
+	chains readkit.ChainSource
 }
 
 // NewSEOCtrl builds the controller. chains is the locale provider (localize.Provider), used to find the
 // default locale.
-func NewSEOCtrl(svc services.SEOService, chains httpx.ChainSource) SEOCtrl {
+func NewSEOCtrl(svc services.SEOService, chains readkit.ChainSource) SEOCtrl {
 	return &seoCtrl{svc: svc, chains: chains}
 }
 
 // Sitemap is P-16: GET /public/sitemap. It takes no locale: the sitemap is always in the default locale.
 func (h *seoCtrl) Sitemap(c *fiber.Ctx) error {
-	chain, err := httpx.LoadChain(c, h.chains)
+	chain, err := readkit.LoadChain(c, h.chains)
 	if err != nil {
 		return err
 	}
@@ -35,5 +36,5 @@ func (h *seoCtrl) Sitemap(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Send(c, nil, response.Envelope{Success: true, Data: d})
+	return readkit.Send(c, localize.Negotiation{}, response.Envelope{Success: true, Data: d})
 }
