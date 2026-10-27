@@ -17,6 +17,11 @@ linters:
     # --- Context correctness ---
     - contextcheck    # ensure context is propagated
 
+    # --- Security / database hygiene ---
+    - gosec           # security issues (SQL built by string concatenation, weak crypto, int overflow, ...)
+    - rowserrcheck    # sql.Rows.Err() must be checked
+    - sqlclosecheck   # sql.Rows / Stmt must be closed
+
   settings:
     govet:
       enable-all: true
@@ -37,11 +42,29 @@ linters:
       - std-error-handling
 
     rules:
-      # Test files — relax errcheck and contextcheck
+      # Test files — relax errcheck, contextcheck and bodyclose (app.Test responses are in-memory) and gosec
+      # (tests use throw-away passwords and talk to the scratch database only)
       - path: _test\.go
         linters:
           - errcheck
           - contextcheck
+          - bodyclose
+          - gosec
+
+      # LEGACY helpers kept as they are: the HTTP client takes its base URL from configuration (not from user
+      # input) and convertor ignores copier errors on purpose (see the copier.Copy rule below).
+      - path: pkg/httpclient/
+        linters:
+          - gosec
+      - path: pkg/utilities/convertor/
+        linters:
+          - gosec
+
+      # error code names such as INVALID_TOKEN / TOKEN_EXPIRED trip the "hardcoded credentials" heuristic
+      - path: pkg/apperror/
+        linters:
+          - gosec
+        text: G101
 
       # Generated swagger docs
       - path: docs/

@@ -3,10 +3,10 @@ package formatter
 import (
 	"errors"
 	"fmt"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/middleware"
-	"net/http"
 	"time"
+
+	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
 )
 
 var dateTimeFormat = "2006-01-02 15:04:05"
@@ -39,12 +39,12 @@ func DateTimeFormatFromString(datetime string) (*time.Time, error) {
 func NewStringFormatToDateTime(datetime string) (time.Time, error) {
 	loc, err := time.LoadLocation("Asia/Bangkok")
 	if err != nil {
-		return time.Time{}, middleware.NewAppErrorStatusMessage(http.StatusBadRequest, errors.New("["+datetime+"]"+"INVALID_DATETIME_FORMAT_EX:(yyyy-mm-dd hh:mm:ss)"))
+		return time.Time{}, invalidDateTime(datetime)
 	}
 	t, err := time.ParseInLocation(dateTimeFormat, datetime, loc)
 	if err != nil {
 		logs.Error(err)
-		return time.Time{}, middleware.NewAppErrorStatusMessage(http.StatusBadRequest, errors.New("["+datetime+"]"+"INVALID_DATETIME_FORMAT_EX:(yyyy-mm-dd hh:mm:ss)"))
+		return time.Time{}, invalidDateTime(datetime)
 	}
 
 	// format the time value
@@ -53,7 +53,13 @@ func NewStringFormatToDateTime(datetime string) (time.Time, error) {
 	//TODO: input 2023-04-05 17:28:04 output 2023-04-05 17:28:04 +0700 +07
 	parse, err := time.Parse(layoutDateTime, s)
 	if err != nil {
-		return time.Time{}, middleware.NewAppErrorStatusMessage(http.StatusBadRequest, errors.New("["+datetime+"]"+"INVALID_DATETIME_FORMAT_EX:(yyyy-mm-dd hh:mm:ss)"))
+		return time.Time{}, invalidDateTime(datetime)
 	}
 	return parse, nil
+}
+
+// invalidDateTime is the 400 answer for a datetime that does not match "yyyy-mm-dd hh:mm:ss"; the offending
+// text goes to the log cause only, never into the response.
+func invalidDateTime(datetime string) error {
+	return apperror.BadRequest().WithCause(errors.New("[" + datetime + "] INVALID_DATETIME_FORMAT_EX:(yyyy-mm-dd hh:mm:ss)"))
 }

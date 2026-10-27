@@ -17,7 +17,23 @@ CONFIG_ENC=config.enc.yaml
 DOCKER_IMAGE=materm-web-portal-backend
 DOCKER_PORT=3000
 
-.PHONY: run build swag test test-coverage lint install encrypt decrypt docker-test-build docker-test-run docker-test docker-test-stop
+# --- test infrastructure --------------------------------------------------------------------------
+# Tests that need a database or Redis carry the build tag `dbtest`, so plain `make test` never touches any of
+# them. They run ONLY on the scratch Postgres + Redis (127.0.0.1:55433 / :56380) that belongs to the admin
+# backend repository (its scripts/testdb.sh). This repo does not start or stop them: `make testdb-up` asks
+# the admin repo, whose script returns early when the containers already run, and `test-db` loads that
+# repo's git-ignored .env.test into the shell of the test command without printing it. The guards in
+# pkg/testutil refuse database `materm`, ports 5432/6379 and any cluster without the scratch marker.
+ADMIN_REPO ?= ../materm-admin-backend
+TESTDB_ENV ?= $(ADMIN_REPO)/.env.test
+
+# $(1)=env file, $(2)=command. Values are never echoed.
+define WITH_ENV
+@if [ -f "$(1)" ]; then set -a; . "$(1)"; set +a; fi; $(2)
+endef
+
+.PHONY: run build swag test test-coverage lint install encrypt decrypt docker-test-build docker-test-run docker-test docker-test-stop \
+	testdb-up testdb-status test-db check-config
 
 run:
 	$(GORUN) $(ENTRY)
@@ -28,11 +44,26 @@ build:
 swag:
 	$(SWAG_DOC)
 
+# unit tests of every package (no database, no Redis)
 test:
-	$(shell go env GOPATH)/bin/gotestsum --format testname ./tests/...
+	LOG_FILE=off $(shell go env GOPATH)/bin/gotestsum --format testname ./...
+
+# the scratch Postgres/Redis must be up (`make testdb-up`); creates random throw-away databases there
+test-db:
+	$(call WITH_ENV,$(TESTDB_ENV),LOG_FILE=off $(GOTEST) -tags=dbtest ./...)
+
+testdb-up:
+	$(MAKE) -C $(ADMIN_REPO) testdb-up
+
+testdb-status:
+	$(MAKE) -C $(ADMIN_REPO) testdb-status
+
+# fails (printing key paths, never values) when config.yaml contains a value: it must stay a blank template in git
+check-config:
+	$(ADMIN_REPO)/scripts/check-config-blank.sh $(CONFIG)
 
 test-coverage:
-	@$(GOTEST) -coverprofile=coverage.out -coverpkg=github.com/materm-organization/materm-web-portal-backend/modules/... ./tests/... 2>&1 | grep "^ok"
+	@$(GOTEST) -coverprofile=coverage.out -coverpkg=github.com/materm-organization/materm-web-portal-backend/modules/... ./... 2>&1 | grep "^ok"
 	@$(GOCMD) tool cover -func=coverage.out | grep -E "(services|mapper|^total)" | \
 		awk 'BEGIN{W=50;cur=""} \
 		/^total/{tp=$$3;next} \
@@ -49,8 +80,9 @@ test-coverage:
 		 printf"\n  \033[1mTOTAL\033[0m\n"; \
 		 printf"  \033[36m%s\033[0m  \033[1m%.1f%%\033[0m covered\n\n",bar,pct}'
 
+# build tag so that the DB-backed test files (dbtest) are linted too
 lint:
-	$(shell go env GOPATH)/bin/golangci-lint run ./...
+	$(shell go env GOPATH)/bin/golangci-lint run --build-tags=dbtest ./...
 
 install:
 	$(GOCMD) mod download

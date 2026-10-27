@@ -1,47 +1,80 @@
 package bootstrap
 
 import (
-	"log"
+	"crypto/sha256"
+	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 )
 
-// Env is the typed view of config.yaml. Keys use camelCase in the file; the
-// mapstructure tags below must match them exactly.
+// Env mirrors config.yaml. Keys are camelCase in the file; viper lower-cases keys and mapstructure matches
+// case-insensitively, so the tags below are written exactly as they appear in config.yaml.
+//
+// Any value can be overridden by an environment variable: the key path is joined with "_" and upper-cased
+// (e.g. DATABASE_ADMIN_HOST, SERVER_PORT, PORTAL_FRONTENDKEYS).
+//
+// config.yaml is the user's blank template. Keys the template does not have (server.env, server.corsOrigins,
+// portal.*, media.*, cache.*, ...: doc/08 section 2.9) are registered with viper SetDefault in registerDefaults:
+// Unmarshal only sees known keys, so without that registration an environment override of such a key would
+// be ignored silently. Sections the portal does not use (database.sell/erp/device, mailer, jwt, bootstrap)
+// are not part of Env at all: whatever the template holds there is ignored.
 type Env struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Redis     RedisConfig     `mapstructure:"redis"`
-	JWT       JWTConfig       `mapstructure:"jwt"`
-	Mailer    MailerConfig    `mapstructure:"mailer"`
-	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
+	Portal    PortalConfig    `mapstructure:"portal"`
+	File      FileConfig      `mapstructure:"file"`
+	Media     MediaConfig     `mapstructure:"media"`
+	Cache     CacheConfig     `mapstructure:"cache"`
+	RateLimit RateLimitConfig `mapstructure:"rateLimit"`
+	Forms     FormsConfig     `mapstructure:"forms"`
+	Preview   PreviewConfig   `mapstructure:"preview"`
+	Site      SiteConfig      `mapstructure:"site"`
 }
+
+// Deployment environments of server.env.
+const (
+	EnvDev     = "dev"
+	EnvStaging = "staging"
+	EnvProd    = "prod"
+)
 
 // ServerConfig holds HTTP server settings.
 //
-// ReadTimeout/WriteTimeout are decoded by viper's default hook, so write them
-// as duration strings with a unit (e.g. "30s", "1m"). A bare number would be
-// read as nanoseconds. Zero (blank) means "use the Fiber default / no limit".
+// ReadTimeout and WriteTimeout are decoded by viper's default hook, so they must be written as Go duration
+// strings in config.yaml (e.g. "30s", "1m"). A bare number such as 30 would be read as 30 nanoseconds. Zero
+// or blank becomes 30s in Defaults.
+//
+// Env is the deployment mode: dev | staging | prod. A blank value means prod, so a forgotten SERVER_ENV can
+// only make start-up stricter. CORSOrigins is a comma separated list when set from the environment; blank
+// means no CORS answer at all (every caller is another server, doc/08 section 2.9). TrustedProxies /
+// ProxyHeader decide where the connection's client IP comes from: leave them blank to ignore forwarding
+// headers.
 type ServerConfig struct {
-	Port         int           `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"readTimeout"`
-	WriteTimeout time.Duration `mapstructure:"writeTimeout"`
+	Port           int           `mapstructure:"port"`
+	ReadTimeout    time.Duration `mapstructure:"readTimeout"`
+	WriteTimeout   time.Duration `mapstructure:"writeTimeout"`
+	Env            string        `mapstructure:"env"`
+	CORSOrigins    []string      `mapstructure:"corsOrigins"`
+	TrustedProxies []string      `mapstructure:"trustedProxies"`
+	ProxyHeader    string        `mapstructure:"proxyHeader"`
 }
 
-// DatabaseConfig holds the shared pool settings and the four named PostgreSQL
-// connections. Only Admin is connected at startup; the others are parsed only.
+// DatabaseConfig holds the shared pool settings and the one connection the portal uses. Admin is the
+// historical key name (the template is shared with the admin backend); for the portal it is the READ-ONLY
+// role cms_portal_ro (doc/08 section 2.6). The portal never migrates, seeds or writes through GORM models.
+// The template's sell/erp/device connections are not read.
 type DatabaseConfig struct {
-	Pool   PoolConfig   `mapstructure:"pool"`
-	Admin  DBConnection `mapstructure:"admin"`
-	Sell   DBConnection `mapstructure:"sell"`
-	Erp    DBConnection `mapstructure:"erp"`
-	Device DBConnection `mapstructure:"device"`
+	Pool  PoolConfig   `mapstructure:"pool"`
+	Admin DBConnection `mapstructure:"admin"`
 }
 
-// PoolConfig maps to database/sql pool settings. A zero value leaves the
-// corresponding database/sql default untouched.
+// PoolConfig holds database/sql pool settings. A zero value becomes the default in Defaults
+// (15 open / 5 idle / 30 min lifetime / 5 min idle time: doc/03 section 12, doc/08 section 2.6).
 type PoolConfig struct {
 	MaxOpenConns           int `mapstructure:"maxOpenConns"`
 	MaxIdleConns           int `mapstructure:"maxIdleConns"`
@@ -49,8 +82,7 @@ type PoolConfig struct {
 	ConnMaxIdleTimeMinutes int `mapstructure:"connMaxIdleTimeMinutes"`
 }
 
-// DBConnection describes one PostgreSQL connection. SSLMode and Timezone are
-// optional (the device connection does not define them) and are omitted from
+// DBConnection describes one PostgreSQL connection. SSLMode and Timezone are optional and are omitted from
 // the DSN when empty.
 type DBConnection struct {
 	Host     string `mapstructure:"host"`
@@ -62,6 +94,34 @@ type DBConnection struct {
 	Timezone string `mapstructure:"timezone"`
 }
 
+// Missing returns the names (never the values) of the fields a usable connection needs but lacks.
+func (c DBConnection) Missing() []string {
+	var m []string
+	if c.Host == "" {
+		m = append(m, "host")
+	}
+	if c.Port == 0 {
+		m = append(m, "port")
+	}
+	if c.User == "" {
+		m = append(m, "user")
+	}
+	if c.Password == "" {
+		m = append(m, "password")
+	}
+	if c.DBName == "" {
+		m = append(m, "dbname")
+	}
+	return m
+}
+
+// Target is "host:port/dbname" for messages; it never contains the user or password.
+func (c DBConnection) Target() string {
+	return fmt.Sprintf("%s:%d/%s", c.Host, c.Port, c.DBName)
+}
+
+// RedisConfig addresses the (shared) Redis. ClearOnStart deletes only the keys under this service's prefix
+// (materm-portal:) and only in dev.
 type RedisConfig struct {
 	Host         string `mapstructure:"host"`
 	Port         int    `mapstructure:"port"`
@@ -71,43 +131,319 @@ type RedisConfig struct {
 	ClearOnStart bool   `mapstructure:"clearOnStart"`
 }
 
-type JWTConfig struct {
-	Secret        string `mapstructure:"secret"`
-	RefreshSecret string `mapstructure:"refreshSecret"`
+// PortalConfig holds the secret of the server-to-server contract: FrontendKeys are the accepted values of the
+// X-Portal-Key header (at most two, so that a key can be rotated without downtime). The values come from the
+// environment (PORTAL_FRONTENDKEYS, comma separated) and are never committed, logged or put into an error.
+type PortalConfig struct {
+	FrontendKeys []string `mapstructure:"frontendKeys"`
 }
 
-// MailerConfig is parsed only; no feature uses it yet.
-type MailerConfig struct {
-	Host     string `mapstructure:"host"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	Port     int    `mapstructure:"port"`
-	From     string `mapstructure:"from"`
+// FileConfig: the portal needs only the public base URL of the file service to build media URLs
+// (doc/08 section 2.9). Env override: FILE_PATH_IP.
+type FileConfig struct {
+	PathIP string `mapstructure:"path_ip"`
 }
 
-// BootstrapConfig is parsed only; no feature uses it yet.
-type BootstrapConfig struct {
-	AdminUsername string `mapstructure:"adminUsername"`
-	AdminPassword string `mapstructure:"adminPassword"`
+// MediaConfig: StaticPrefix marks storage keys of the first-day media that portal-frontend serves from its
+// own public/ folder (doc/04 section 8.3).
+type MediaConfig struct {
+	StaticPrefix string `mapstructure:"staticPrefix"`
 }
 
-func NewEnv() *Env {
+// CacheConfig: Enabled=false turns the response cache off (debugging); TTL is the upper bound of staleness.
+type CacheConfig struct {
+	Enabled bool          `mapstructure:"enabled"`
+	TTL     time.Duration `mapstructure:"ttl"`
+}
+
+// RateLimitConfig: ReadPerMinute is the read ceiling (NFR-15). The portal reaches its API only with a portal
+// key, so it is applied by the read limiter only if one is ever mounted.
+type RateLimitConfig struct {
+	ReadPerMinute int `mapstructure:"readPerMinute"`
+}
+
+// FormsConfig: limits of the contact form that are not in the database (doc/08 section 6.3).
+type FormsConfig struct {
+	DailyLimit     int           `mapstructure:"dailyLimit"`
+	MinFillSeconds int           `mapstructure:"minFillSeconds"`
+	MaxClockSkew   time.Duration `mapstructure:"maxClockSkew"`
+}
+
+// PreviewConfig: CacheTTL is how long a consumed preview snapshot is kept in Redis.
+type PreviewConfig struct {
+	CacheTTL time.Duration `mapstructure:"cacheTTL"`
+}
+
+// SiteConfig: DefaultBaseURL is the fallback of the site.base_url setting (canonical URLs).
+type SiteConfig struct {
+	DefaultBaseURL string `mapstructure:"defaultBaseUrl"`
+}
+
+// NewEnv loads ./config.yaml (plus environment overrides), applies Defaults and returns the Env. It does
+// not validate: call Validate (the server does).
+func NewEnv() (*Env, error) { return loadEnv("./") }
+
+// LoadEnv is NewEnv for a config.yaml in dir (tests and tools that do not run in the repository root).
+func LoadEnv(dir string) (*Env, error) { return loadEnv(dir) }
+
+// loadEnv reads config.yaml from dir. A missing file is an error (the template is always shipped).
+func loadEnv(dir string) (*Env, error) {
 	v := viper.New()
-
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath("./")
+	v.AddConfigPath(dir)
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	registerDefaults(v)
 
 	if err := v.ReadInConfig(); err != nil {
-		log.Fatal("Can't find the file .env : ", err)
+		return nil, fmt.Errorf("can't read config.yaml: %w", err)
 	}
-
 	var env Env
 	if err := v.Unmarshal(&env); err != nil {
-		log.Fatal("Environment can't be loaded: ", err)
+		return nil, fmt.Errorf("environment can't be loaded: %w", err)
 	}
-	log.Println("The App is configured to run on port:", env.Server.Port)
-	return &env
+	env.Defaults()
+	return &env, nil
+}
+
+// Default values of the keys of doc/08 section 2.9.
+const (
+	defaultStaticPrefix  = "static/"
+	defaultCacheTTL      = 24 * time.Hour
+	defaultReadPerMinute = 300
+	defaultDailyLimit    = 20
+	defaultMinFill       = 3
+	defaultMaxClockSkew  = 10 * time.Minute
+	defaultPreviewTTL    = 10 * time.Second
+)
+
+// registerDefaults makes the keys the user's template lacks known to viper and gives them their default
+// (see Env). A key that is blank in the file keeps the registered default only when the file omits it;
+// Defaults repairs blanks and non-positive values afterwards.
+func registerDefaults(v *viper.Viper) {
+	v.SetDefault("server.env", "")
+	v.SetDefault("server.corsOrigins", []string{})
+	v.SetDefault("server.trustedProxies", []string{})
+	v.SetDefault("server.proxyHeader", "")
+	v.SetDefault("portal.frontendKeys", []string{})
+	v.SetDefault("file.path_ip", "")
+	v.SetDefault("media.staticPrefix", defaultStaticPrefix)
+	v.SetDefault("cache.enabled", true)
+	v.SetDefault("cache.ttl", defaultCacheTTL)
+	v.SetDefault("rateLimit.readPerMinute", defaultReadPerMinute)
+	v.SetDefault("forms.dailyLimit", defaultDailyLimit)
+	v.SetDefault("forms.minFillSeconds", defaultMinFill)
+	v.SetDefault("forms.maxClockSkew", defaultMaxClockSkew)
+	v.SetDefault("preview.cacheTTL", defaultPreviewTTL)
+	v.SetDefault("site.defaultBaseUrl", "")
+}
+
+// Defaults fills blank values: pool limits, timeouts and the doc/08 section 2.9 keys. It never invents a
+// secret: portal.frontendKeys stays as configured. It is idempotent.
+func (e *Env) Defaults() {
+	e.Server.Env = strings.ToLower(strings.TrimSpace(e.Server.Env))
+	if e.Server.Env == "" {
+		e.Server.Env = EnvProd // blank = strict
+	}
+	if e.Server.ReadTimeout <= 0 {
+		e.Server.ReadTimeout = 30 * time.Second
+	}
+	if e.Server.WriteTimeout <= 0 {
+		e.Server.WriteTimeout = 30 * time.Second
+	}
+	e.Server.CORSOrigins = trimList(e.Server.CORSOrigins)
+	e.Server.TrustedProxies = trimList(e.Server.TrustedProxies)
+	e.Portal.FrontendKeys = trimList(e.Portal.FrontendKeys)
+
+	p := &e.Database.Pool
+	if p.MaxOpenConns <= 0 {
+		p.MaxOpenConns = 15
+	}
+	if p.MaxIdleConns <= 0 {
+		p.MaxIdleConns = 5
+	}
+	if p.ConnMaxLifetimeMinutes <= 0 {
+		p.ConnMaxLifetimeMinutes = 30
+	}
+	if p.ConnMaxIdleTimeMinutes <= 0 {
+		p.ConnMaxIdleTimeMinutes = 5
+	}
+
+	if strings.TrimSpace(e.Media.StaticPrefix) == "" {
+		e.Media.StaticPrefix = defaultStaticPrefix
+	}
+	if e.Cache.TTL <= 0 {
+		e.Cache.TTL = defaultCacheTTL
+	}
+	if e.RateLimit.ReadPerMinute <= 0 {
+		e.RateLimit.ReadPerMinute = defaultReadPerMinute
+	}
+	if e.Forms.DailyLimit <= 0 {
+		e.Forms.DailyLimit = defaultDailyLimit
+	}
+	if e.Forms.MinFillSeconds <= 0 {
+		e.Forms.MinFillSeconds = defaultMinFill
+	}
+	if e.Forms.MaxClockSkew <= 0 {
+		e.Forms.MaxClockSkew = defaultMaxClockSkew
+	}
+	if e.Preview.CacheTTL <= 0 {
+		e.Preview.CacheTTL = defaultPreviewTTL
+	}
+	e.Site.DefaultBaseURL = strings.TrimSpace(e.Site.DefaultBaseURL)
+}
+
+func trimList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Strict reports whether the stricter staging/prod rules apply (anything but dev).
+func (e *Env) Strict() bool { return e.Server.Env != EnvDev }
+
+// ConfigError lists the configuration problems; messages name the key and the rule, never a value.
+type ConfigError struct{ Problems []string }
+
+func (e *ConfigError) Error() string {
+	return "invalid configuration: " + strings.Join(e.Problems, "; ")
+}
+
+// Portal key rules. The key is compared in constant time (pkg/portalkey); these rules keep it unguessable
+// and safe to carry in an HTTP header.
+const (
+	minPortalKeyBytes = 32
+	maxPortalKeys     = 2
+)
+
+// headerSafe is the character set a portal key may use (printable ASCII without space).
+var headerSafe = regexp.MustCompile(`^[\x21-\x7e]+$`)
+
+// Validate checks the config the server needs (doc/08 section 2.9) and returns the warnings plus an error
+// that lists every violated rule. Checks that need a connection (Redis reachable, the database role) happen
+// at start-up, not here. No message contains a value.
+func (e *Env) Validate() (warnings []string, err error) {
+	var bad []string
+	fail := func(f string, a ...any) { bad = append(bad, fmt.Sprintf(f, a...)) }
+	warn := func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) }
+	strict := e.Strict()
+
+	switch e.Server.Env {
+	case EnvDev, EnvStaging, EnvProd:
+	default:
+		fail("server.env: must be dev, staging or prod")
+	}
+	if e.Server.Port < 1 || e.Server.Port > 65535 {
+		fail("server.port: required, 1-65535 (a blank port makes the server listen on a random port)")
+	}
+
+	if m := e.Database.Admin.Missing(); len(m) > 0 {
+		fail("database.admin: missing %s", strings.Join(m, ", "))
+	}
+	switch strings.ToLower(e.Database.Admin.SSLMode) {
+	case "disable":
+		if strict {
+			fail("database.admin.sslmode: disable is not allowed outside dev")
+		} else {
+			warn("database.admin.sslmode: disable (acceptable for local development only)")
+		}
+	case "":
+		if strict {
+			warn("database.admin.sslmode: blank (driver default 'prefer'); use verify-full in production")
+		}
+	}
+
+	if strict {
+		if e.Redis.Host == "" || e.Redis.Port == 0 {
+			fail("redis: host and port are required outside dev")
+		}
+		if e.Redis.ClearOnStart {
+			fail("redis.clearOnStart: must be false outside dev (the Redis is shared)")
+		}
+	} else if e.Redis.ClearOnStart {
+		warn("redis.clearOnStart: true clears the materm-portal: key prefix at every start")
+	}
+
+	e.validateCORS(fail)
+	e.validatePortalKeys(strict, fail, warn)
+	e.validateFile(fail)
+
+	if strict && len(e.Server.TrustedProxies) == 0 {
+		warn("server.trustedProxies: blank, forwarding headers are ignored (the client address is the proxy's behind a reverse proxy)")
+	}
+	if c := e.Site.DefaultBaseURL; c != "" {
+		if u, perr := url.Parse(c); perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			fail("site.defaultBaseUrl: must be an http(s) URL with a host")
+		}
+	}
+	if e.Forms.MaxClockSkew > time.Hour {
+		warn("forms.maxClockSkew: longer than 1h weakens the rendered_at check")
+	}
+
+	if len(bad) > 0 {
+		return warnings, &ConfigError{Problems: bad}
+	}
+	return warnings, nil
+}
+
+// validateCORS: blank is valid (no CORS answer). Entries must be origins (scheme://host[:port]), never "*".
+func (e *Env) validateCORS(fail func(string, ...any)) {
+	for _, o := range e.Server.CORSOrigins {
+		if strings.Contains(o, "*") {
+			fail("server.corsOrigins: wildcard origins are not allowed")
+			return
+		}
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil {
+			fail("server.corsOrigins: every entry must be an origin like https://host[:port] (no path, query or credentials)")
+			return
+		}
+	}
+}
+
+// validatePortalKeys checks portal.frontendKeys. Outside dev at least one key is required. In dev blank keys
+// are allowed but the server then refuses every /api/v1 request (fail closed): the warning says so.
+func (e *Env) validatePortalKeys(strict bool, fail, warn func(string, ...any)) {
+	keys := e.Portal.FrontendKeys
+	if len(keys) == 0 {
+		if strict {
+			fail("portal.frontendKeys: at least one key is required outside dev (set PORTAL_FRONTENDKEYS)")
+		} else {
+			warn("portal.frontendKeys: blank in dev, every /api/v1 request is refused with 401 (set PORTAL_FRONTENDKEYS to call the API)")
+		}
+		return
+	}
+	if len(keys) > maxPortalKeys {
+		fail("portal.frontendKeys: at most %d keys (current and next, for rotation)", maxPortalKeys)
+	}
+	seen := make(map[[sha256.Size]byte]struct{}, len(keys))
+	for i, k := range keys {
+		switch {
+		case len(k) < minPortalKeyBytes:
+			fail("portal.frontendKeys[%d]: too short (min %d bytes)", i, minPortalKeyBytes)
+		case !headerSafe.MatchString(k):
+			fail("portal.frontendKeys[%d]: only printable ASCII without spaces is allowed", i)
+		}
+		sum := sha256.Sum256([]byte(k))
+		if _, dup := seen[sum]; dup {
+			fail("portal.frontendKeys[%d]: duplicates another key", i)
+		}
+		seen[sum] = struct{}{}
+	}
+}
+
+// validateFile: file.path_ip is optional; when set it must be an http(s) URL with a host.
+func (e *Env) validateFile(fail func(string, ...any)) {
+	if e.File.PathIP == "" {
+		return
+	}
+	u, err := url.Parse(e.File.PathIP)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		fail("file.path_ip: must be an http(s) URL with a host")
+	}
 }

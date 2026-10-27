@@ -1,0 +1,152 @@
+package application
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gofiber/fiber/v2"
+
+	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
+	systemservices "github.com/materm-organization/materm-web-portal-backend/modules/system/services"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
+)
+
+const testKey = "application-test-key-0123456789abcdef"
+
+func up(context.Context) error { return nil }
+
+// wire builds the real pipeline (bootstrap.NewFiber) and the real router over fake dependencies.
+func wire(t *testing.T, keys []string, redisUp bool) (*fiber.App, *routepolicy.Registry, *routepolicy.Group) {
+	t.Helper()
+	app := bootstrap.NewFiber(bootstrap.ServerConfig{})
+	var rp func(context.Context) error
+	if redisUp {
+		rp = up
+	}
+	svc := &Services{System: systemservices.NewSystemService(systemservices.Deps{PingDB: up, PingRedis: rp, Strict: true})}
+	reg, api := SetupRouter(app, SetupControllers(svc), portalkey.New(keys))
+	return app, reg, api
+}
+
+func req(t *testing.T, app *fiber.App, method, path string, headers map[string]string) (int, map[string]any) {
+	t.Helper()
+	r := httptest.NewRequest(method, path, nil)
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	resp, err := app.Test(r, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	var body map[string]any
+	_ = json.Unmarshal(b, &body)
+	return resp.StatusCode, body
+}
+
+// The route-policy coverage test (NFR-12): every route of the Fiber table is in the registry, i.e. went
+// through a routepolicy.Group and so declared its policy.
+func TestEveryRouteDeclaresAPolicy(t *testing.T) {
+	app, reg, _ := wire(t, []string{testKey}, true)
+	if got := routepolicy.UncoveredRoutes(app, reg); len(got) != 0 {
+		t.Fatalf("routes without a declared policy: %v\nregistry:\n%s", got, reg.Describe())
+	}
+	if _, ok := reg.Lookup("GET", "/health"); !ok {
+		t.Fatalf("the probes must be registered:\n%s", reg.Describe())
+	}
+}
+
+// Whatever the registry says is what the server does, for every route the application registers (it grows
+// with each module, so this test needs no edit when a module is added).
+func TestRegisteredPoliciesAreEnforced(t *testing.T) {
+	app, reg, _ := wire(t, []string{testKey}, true)
+	for _, e := range reg.Entries() {
+		path := strings.NewReplacer(":id", "1", ":slug", "x", ":key", "x", ":code", "en").Replace(e.Path)
+		without, _ := req(t, app, e.Method, path, nil)
+		wrong, _ := req(t, app, e.Method, path, map[string]string{portalkey.Header: "wrong"})
+		switch e.Policy.Kind {
+		case routepolicy.KindPortalKey:
+			if without != 401 || wrong != 401 {
+				t.Errorf("%s %s: without key %d, wrong key %d, want 401", e.Method, e.Path, without, wrong)
+			}
+			if with, _ := req(t, app, e.Method, path, map[string]string{portalkey.Header: testKey}); with == 401 {
+				t.Errorf("%s %s: refused a valid key", e.Method, e.Path)
+			}
+		case routepolicy.KindPublic:
+			if without == 401 {
+				t.Errorf("%s %s: public route demanded a key", e.Method, e.Path)
+			}
+		}
+		if strings.HasPrefix(e.Path, "/api/v1") && e.Policy.Kind != routepolicy.KindPortalKey {
+			t.Errorf("%s %s: a route below /api/v1 must be PortalKey", e.Method, e.Path)
+		}
+	}
+}
+
+func TestProbesNeedNoKey(t *testing.T) {
+	app, _, _ := wire(t, []string{testKey}, true)
+	for _, p := range []string{"/health", "/healthz", "/ready", "/readyz"} {
+		if status, body := req(t, app, "GET", p, nil); status != 200 || body["success"] != true {
+			t.Errorf("%s: %d %v", p, status, body)
+		}
+	}
+	// Redis down in a strict deployment: /ready is 200 degraded (the cache is optional; doc/08 section 2.7 item 5),
+	// liveness is untouched
+	app, _, _ = wire(t, []string{testKey}, false)
+	if status, body := req(t, app, "GET", "/ready", nil); status != 200 || body["data"].(map[string]any)["status"] != "degraded" {
+		t.Errorf("/ready without Redis in strict mode: %d %v, want 200 degraded", status, body)
+	}
+	if status, _ := req(t, app, "GET", "/health", nil); status != 200 {
+		t.Errorf("/health: %d", status)
+	}
+}
+
+// Everything under /api/v1 is behind the key, including paths that match no route: 401 without it, a
+// standard 404 with it.
+func TestAPIPrefixIsGuarded(t *testing.T) {
+	app, _, _ := wire(t, []string{testKey}, true)
+	status, body := req(t, app, "GET", "/api/v1/anything/at/all", nil)
+	if status != 401 || body["code"] != "UNAUTHENTICATED" || body["request_id"] == "" {
+		t.Errorf("no key: %d %v", status, body)
+	}
+	status, body = req(t, app, "GET", "/api/v1/anything/at/all", map[string]string{portalkey.Header: testKey})
+	if status != 404 || body["code"] != "NOT_FOUND" {
+		t.Errorf("with key: %d %v", status, body)
+	}
+	// outside the prefix no key is needed to learn that a path does not exist
+	if status, _ = req(t, app, "GET", "/elsewhere", nil); status != 404 {
+		t.Errorf("/elsewhere: %d", status)
+	}
+}
+
+// Fail closed: without any configured key (dev with PORTAL_FRONTENDKEYS blank) the API refuses everyone.
+func TestNoConfiguredKeyRefusesEveryone(t *testing.T) {
+	app, _, api := wire(t, nil, true)
+	api.Get("/ping", routepolicy.PortalKey(), func(c *fiber.Ctx) error { return c.SendString("pong") })
+	for _, h := range []map[string]string{nil, {portalkey.Header: ""}, {portalkey.Header: testKey}} {
+		if status, _ := req(t, app, "GET", "/api/v1/ping", h); status != 401 {
+			t.Errorf("headers %v: %d, want 401", h, status)
+		}
+	}
+}
+
+// A module route registered on the API group is protected without the module doing anything.
+func TestModuleRouteOnAPIGroup(t *testing.T) {
+	app, reg, api := wire(t, []string{testKey}, true)
+	api.Group("/public").Get("/ping", routepolicy.PortalKey(), func(c *fiber.Ctx) error { return c.SendString("pong") })
+	if status, _ := req(t, app, "GET", "/api/v1/public/ping", nil); status != 401 {
+		t.Errorf("no key: %d", status)
+	}
+	if status, _ := req(t, app, "GET", "/api/v1/public/ping", map[string]string{portalkey.Header: testKey}); status != 200 {
+		t.Errorf("with key: %d", status)
+	}
+	if _, ok := reg.Lookup("GET", "/api/v1/public/ping"); !ok {
+		t.Error("the route is not in the registry")
+	}
+}

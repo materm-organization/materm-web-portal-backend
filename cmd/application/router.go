@@ -1,49 +1,30 @@
 package application
 
 import (
-	"fmt"
-	ar "github.com/materm-organization/materm-web-portal-backend/modules/auth/routes"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/constants"
-	"os"
-	"time"
-
 	"github.com/gofiber/fiber/v2"
+
+	systemroutes "github.com/materm-organization/materm-web-portal-backend/modules/system/routes"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/constants"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
 )
 
-func SetupRouter(app fiber.Router, c *Controllers) {
-	api := app.Group(constants.MainRoute, func(ctx *fiber.Ctx) error {
-		return ctx.Next()
-	})
+// SetupRouter mounts every route and returns the registry of their policies:
+//
+//   - the probes (/health, /healthz, /ready, /readyz) on the root, Public();
+//   - everything else under /api/v1 through a routepolicy group that carries the portal key guard
+//     (portalkey.Verifier.Middleware), so each route is PortalKey() and a path that matches nothing answers
+//     401 without the key.
+//
+// Content modules (PB-3 and later) register their routes on the returned api group; the group is the
+// second result so that cmd/application can pass it on.
+func SetupRouter(app *fiber.App, c *Controllers, keys *portalkey.Verifier) (*routepolicy.Registry, *routepolicy.Group) {
+	reg := routepolicy.NewRegistry()
 
-	app.Get(constants.HealthCheckRoute, HealthCheck)
+	root := routepolicy.NewRoot(app, reg)
+	systemroutes.Register(root, c.System)
 
-	// Auth routes
-	ar.NewAuthRouter(api, c.JwtAuthController)
-}
-
-// HealthCheck godoc
-// @Summary Show the status of server.
-// @Description get the status of server.
-// @Tags HealthCheck
-// @Accept */*
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /api/health [get]
-func HealthCheck(c *fiber.Ctx) error {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": fmt.Sprintf("Error getting hostname: %s", err),
-		})
-	}
-	currentTime := time.Now().Format(time.RFC3339)
-	if err := c.Status(200).JSON(fiber.Map{
-		"service-name": "materm-web-portal-api",
-		"hostname":     hostname,
-		"timestamp":    currentTime,
-		"msg":          "OK",
-	}); err != nil {
-		return err
-	}
-	return nil
+	api := routepolicy.NewAPI(app, constants.MainRoute, keys.Middleware(), reg)
+	// module routes are registered here, e.g. siteroutes.Register(api, c.Site)
+	return reg, api
 }

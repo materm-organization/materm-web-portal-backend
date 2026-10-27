@@ -97,9 +97,10 @@ func (r *cacheRepository) Expire(ctx context.Context, key string, expiration tim
 	return r.client.Expire(ctx, key, expiration).Err()
 }
 
-// DeleteAll implements output.CacheRepository.
+// DeleteAll removes every key of THIS service (the materm-portal: prefix). It never flushes the Redis: the
+// instance is shared with other projects (doc/06 section 5.5).
 func (r *cacheRepository) DeleteAll(ctx context.Context) error {
-	return r.client.FlushAll(ctx).Err()
+	return r.DeleteByPrefix(ctx, []string{constants.AppKeyPrefix})
 }
 
 // DeleteByPrefix implements output.CacheRepository.
@@ -121,7 +122,7 @@ func (r *cacheRepository) DeleteByPrefix(ctx context.Context, prefixes []string)
 // InvalidateEntityCaches invalidates both list and item caches for any entity
 // Uses generics for type safety while supporting different ID types
 func (r *cacheRepository) InvalidateEntityCaches(ctx context.Context, key constants.Keys) {
-	// Get all keys matching key.Key (all keys are under constants.AppKeyPrefix)
+	// Get all keys matching the given key pattern
 	keys, err := r.client.Keys(ctx, key.Key).Result()
 	if err != nil {
 		logs.Error(fmt.Sprintf("failed to get user keys: %v", err))
@@ -153,7 +154,12 @@ func (r *cacheRepository) GetClient() *redis.Client {
 	return r.client
 }
 
+// NewRedisRepository wraps client. A nil client (Redis unreachable in dev) yields Unavailable(), whose
+// methods all return ErrUnavailable so callers take their database fallback.
 func NewRedisRepository(client *redis.Client) RedisRepository {
+	if client == nil {
+		return Unavailable()
+	}
 	return &cacheRepository{
 		client: client,
 		pubsub: nil,

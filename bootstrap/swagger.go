@@ -4,9 +4,8 @@ package bootstrap
 // @version 1.0.0
 // @description Backend API for the Materm Web Portal
 
-// IMPORTANT: All API endpoints require an Access token for authentication.
-// Please contact the administrator to obtain your API key.
-// Include the API key in the X-API-Key header for all requests.
+// IMPORTANT: every /api/v1 endpoint requires the server-to-server portal key in the X-Portal-Key header
+// (doc/08 section 2.9). The header is documented as a security scheme, its value is never shown.
 
 // @termsOfService http://swagger.io/terms/
 
@@ -20,10 +19,10 @@ package bootstrap
 // @BasePath /api/v1
 // @schemes http https
 
-// @securityDefinitions.apikey BearerAuth
+// @securityDefinitions.apikey PortalKey
 // @in header
-// @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+// @name X-Portal-Key
+// @description Shared secret of the portal-frontend server (portal.frontendKeys).
 
 import (
 	"fmt"
@@ -41,8 +40,8 @@ type SwaggerConfig struct {
 }
 
 // NewSwaggerConfig creates a new Swagger configuration
-func NewSwaggerConfig() *SwaggerConfig {
-	host := fmt.Sprintf("localhost:%d", GlobalEnv.Server.Port)
+func NewSwaggerConfig(port int) *SwaggerConfig {
+	host := fmt.Sprintf("localhost:%d", port)
 	return &SwaggerConfig{
 		Title:       "Materm Web Portal API",
 		Description: "Backend API for the Materm Web Portal",

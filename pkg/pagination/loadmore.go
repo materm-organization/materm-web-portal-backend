@@ -1,7 +1,7 @@
-package middleware
+package pagination
 
 // LoadMoreQuery is the request + response envelope for keyset ("load more")
-// pagination — the cursor-based counterpart to PageQuery. The client sends
+// pagination — the cursor-based counterpart to ListQuery (reserved for public feeds). The client sends
 // limit + cursor; the handler fills HasMore, NextCursor, and Rows.
 //
 // Flow:

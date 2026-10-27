@@ -1,15 +1,15 @@
 package application
 
 import (
-	authController "github.com/materm-organization/materm-web-portal-backend/modules/auth/controller"
+	systemcontroller "github.com/materm-organization/materm-web-portal-backend/modules/system/controller"
 )
 
+// Controllers holds the HTTP controllers of every module.
 type Controllers struct {
-	JwtAuthController authController.JwtAuthCtrl
+	System systemcontroller.SystemCtrl
 }
 
+// SetupControllers builds the controllers from the services.
 func SetupControllers(s *Services) *Controllers {
-	return &Controllers{
-		JwtAuthController: authController.NewJwtAuthCtrl(s.JwtAuthService),
-	}
+	return &Controllers{System: systemcontroller.NewSystemCtrl(s.System)}
 }

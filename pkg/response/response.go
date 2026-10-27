@@ -1,90 +1,56 @@
+// Package response writes the success envelopes of the API (doc/05 section 1.3, doc/00 section 3):
+//
+//	{ "success": true, "message"?: "...", "data": ... }
+//	{ "success": true, "data": [ ... ], "meta": { "total", "page", "limit", "total_page" } }
+//
+// Errors are written by pkg/apperror (Handler) from the error a handler returns; handlers do not build
+// error bodies. There is no 204: every response is JSON so the frontend can always read it; an action
+// without a result answers 200 with data null.
 package response
 
 import (
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/materm-organization/materm-web-portal-backend/pkg/pagination"
 )
 
-// APIResponse is the standard response structure for all API endpoints
-type APIResponse struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   string      `json:"error,omitempty"`
-	Details interface{} `json:"details,omitempty"`
+// Envelope is the body of a success response.
+type Envelope struct {
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
+	Data    any    `json:"data"`
 }
 
-// Success sends a successful response
-func Success(c *fiber.Ctx, statusCode int, message string, data interface{}) error {
-	return c.Status(statusCode).JSON(APIResponse{
-		Success: true,
-		Message: message,
-		Data:    data,
-	})
+// ListEnvelope is the body of a list response; Meta sits next to Data, never inside it.
+type ListEnvelope struct {
+	Success bool            `json:"success"`
+	Message string          `json:"message,omitempty"`
+	Data    any             `json:"data"`
+	Meta    pagination.Meta `json:"meta"`
 }
 
-// SuccessWithData sends a successful response with data (no message)
-func SuccessWithData(c *fiber.Ctx, statusCode int, data interface{}) error {
-	return c.Status(statusCode).JSON(APIResponse{
-		Success: true,
-		Data:    data,
-	})
+// OK answers 200 with data (nil data is written as null).
+func OK(c *fiber.Ctx, data any) error {
+	return c.Status(fiber.StatusOK).JSON(Envelope{Success: true, Data: data})
 }
 
-// Created sends a 201 Created response
-func Created(c *fiber.Ctx, message string, data interface{}) error {
-	return Success(c, fiber.StatusCreated, message, data)
+// OKMessage answers 200 with an optional human message.
+func OKMessage(c *fiber.Ctx, message string, data any) error {
+	return c.Status(fiber.StatusOK).JSON(Envelope{Success: true, Message: message, Data: data})
 }
 
-// OK sends a 200 OK response
-func OK(c *fiber.Ctx, data interface{}) error {
-	return SuccessWithData(c, fiber.StatusOK, data)
+// Created answers 201 and, when location is not empty, sets the Location header.
+func Created(c *fiber.Ctx, location string, data any) error {
+	if location != "" {
+		c.Set(fiber.HeaderLocation, location)
+	}
+	return c.Status(fiber.StatusCreated).JSON(Envelope{Success: true, Data: data})
 }
 
-// NoContent sends a 204 No Content response
-func NoContent(c *fiber.Ctx) error {
-	return c.SendStatus(fiber.StatusNoContent)
-}
-
-// Error sends an error response
-func Error(c *fiber.Ctx, statusCode int, message string, details interface{}) error {
-	return c.Status(statusCode).JSON(APIResponse{
-		Success: false,
-		Error:   message,
-		Details: details,
-	})
-}
-
-// BadRequest sends a 400 Bad Request response
-func BadRequest(c *fiber.Ctx, message string, details interface{}) error {
-	return Error(c, fiber.StatusBadRequest, message, details)
-}
-
-// Unauthorized sends a 401 Unauthorized response
-func Unauthorized(c *fiber.Ctx, message string) error {
-	return Error(c, fiber.StatusUnauthorized, message, nil)
-}
-
-// Forbidden sends a 403 Forbidden response
-func Forbidden(c *fiber.Ctx, message string) error {
-	return Error(c, fiber.StatusForbidden, message, nil)
-}
-
-// NotFound sends a 404 Not Found response
-func NotFound(c *fiber.Ctx, message string) error {
-	return Error(c, fiber.StatusNotFound, message, nil)
-}
-
-// Conflict sends a 409 Conflict response
-func Conflict(c *fiber.Ctx, message string) error {
-	return Error(c, fiber.StatusConflict, message, nil)
-}
-
-// InternalServerError sends a 500 Internal Server Error response
-func InternalServerError(c *fiber.Ctx, message string, details interface{}) error {
-	return Error(c, fiber.StatusInternalServerError, message, details)
-}
-
-// ValidationError sends a 400 Bad Request response for validation errors
-func ValidationError(c *fiber.Ctx, details interface{}) error {
-	return BadRequest(c, "Validation failed", details)
+// List answers 200 with a page of items plus meta. A nil slice is written as [] (never null).
+func List[T any](c *fiber.Ctx, items []T, meta pagination.Meta) error {
+	if items == nil {
+		items = []T{}
+	}
+	return c.Status(fiber.StatusOK).JSON(ListEnvelope{Success: true, Data: items, Meta: meta})
 }

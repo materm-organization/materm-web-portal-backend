@@ -3,6 +3,7 @@ package validator
 import (
 	"fmt"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"reflect"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -18,6 +19,17 @@ var validate *validator.Validate
 
 func init() {
 	validate = validator.New()
+	// field names in errors are the JSON names clients know (the path of a field error is a JSON Pointer)
+	validate.RegisterTagNameFunc(func(f reflect.StructField) string {
+		name := strings.SplitN(f.Tag.Get("json"), ",", 2)[0]
+		if name == "-" {
+			return ""
+		}
+		if name == "" {
+			return f.Name
+		}
+		return name
+	})
 }
 
 // ValidateStruct runs go-playground/validator on v using the "validate" struct tags.
