@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/redisguard"
 )
 
 // The invalidation contract with the admin relay (doc/08 section 2.7, doc/10 R-017 / Q-08-16).
@@ -254,7 +255,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.cancel = cancel
 	ch := ps.ChannelWithSubscriptions(redis.WithChannelHealthCheckInterval(10 * time.Second))
-	s.resync(runCtx)
+	s.resync(runCtx, startResyncBudget)
 	s.wg.Add(1)
 	go s.loop(runCtx, ch)
 	return nil
@@ -279,12 +280,36 @@ func (s *Subscriber) Stats() Stats {
 	return Stats{Applied: s.applied.Load(), Rejected: s.rejected.Load(), Ignored: s.ignored.Load(), Resyncs: s.resyncs.Load(), TagsFound: s.tags.Load()}
 }
 
-func (s *Subscriber) resync(ctx context.Context) {
-	if err := s.o.Cache.Flush(ctx); err != nil {
-		logs.WarnEvery("publiccache.resync", time.Minute, "publiccache: generation bump after subscribe failed", logs.Err(err))
-		return
+// startResyncBudget bounds the generation bump of Start (the loop's own resyncs retry until the subscriber stops).
+const startResyncBudget = 2 * time.Second
+
+// resync bumps the generation after a (re)subscribe. It bypasses the Redis circuit breaker (the subscription just
+// proved Redis is there) and retries with a backoff: a bump that is lost would let entries from before the
+// outage be served. budget 0 = until ctx ends.
+func (s *Subscriber) resync(ctx context.Context, budget time.Duration) {
+	if budget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, budget)
+		defer cancel()
 	}
-	s.resyncs.Add(1)
+	bctx := redisguard.WithBypass(ctx)
+	delay := 100 * time.Millisecond
+	for {
+		err := s.o.Cache.Flush(bctx)
+		if err == nil {
+			s.resyncs.Add(1)
+			return
+		}
+		logs.WarnEvery("publiccache.resync", time.Minute, "publiccache: generation bump after subscribe failed, retrying", logs.Err(err))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		if delay *= 2; delay > 2*time.Second {
+			delay = 2 * time.Second
+		}
+	}
 }
 
 func (s *Subscriber) loop(ctx context.Context, ch <-chan any) {
@@ -300,7 +325,7 @@ func (s *Subscriber) loop(ctx context.Context, ch <-chan any) {
 			switch v := m.(type) {
 			case *redis.Subscription:
 				if v.Kind == "subscribe" {
-					s.resync(ctx)
+					s.resync(ctx, 0)
 				}
 			case *redis.Message:
 				s.handle(ctx, []byte(v.Payload))

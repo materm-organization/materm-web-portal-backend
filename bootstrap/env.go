@@ -137,6 +137,17 @@ type RedisConfig struct {
 	Password     string `mapstructure:"password"`
 	DB           int    `mapstructure:"db"`
 	ClearOnStart bool   `mapstructure:"clearOnStart"`
+
+	// Fast-fail settings (B1 of the first cross-system run): a Redis outage must cost milliseconds per request,
+	// never a dial retry loop. They come from SetDefault (env REDIS_DIALTIMEOUT, ...), not from config.yaml.
+	// DialTimeout / ReadTimeout / WriteTimeout bound one attempt; MaxRetries is the number of EXTRA attempts of
+	// a failed command (0 = one attempt); BreakerCooldown is how long the circuit stays open after a failure
+	// before one request probes Redis again (pkg/redisguard).
+	DialTimeout     time.Duration `mapstructure:"dialTimeout"`
+	ReadTimeout     time.Duration `mapstructure:"readTimeout"`
+	WriteTimeout    time.Duration `mapstructure:"writeTimeout"`
+	MaxRetries      int           `mapstructure:"maxRetries"`
+	BreakerCooldown time.Duration `mapstructure:"breakerCooldown"`
 }
 
 // PortalConfig holds the secret of the server-to-server contract: FrontendKeys are the accepted values of the
@@ -249,6 +260,15 @@ const (
 	defaultPreviewToken  = 60
 	defaultPreviewKey    = 300
 
+	defaultRedisDialTimeout = 200 * time.Millisecond
+	defaultRedisIOTimeout   = 300 * time.Millisecond
+	defaultRedisBreakerCool = 3 * time.Second
+	minRedisTimeout         = 10 * time.Millisecond
+	maxRedisTimeout         = 5 * time.Second
+	minRedisBreakerCooldown = 500 * time.Millisecond
+	maxRedisBreakerCooldown = time.Minute
+	maxRedisMaxRetries      = 3
+
 	// DefaultInvalidateChannel equals publiccache.DefaultChannel (a test keeps them in step; bootstrap does not
 	// import the cache package).
 	DefaultInvalidateChannel = "materm:cms.invalidate"
@@ -266,6 +286,11 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("portal.frontendKeys", []string{})
 	v.SetDefault("file.path_ip", "")
 	v.SetDefault("media.staticPrefix", defaultStaticPrefix)
+	v.SetDefault("redis.dialTimeout", defaultRedisDialTimeout)
+	v.SetDefault("redis.readTimeout", defaultRedisIOTimeout)
+	v.SetDefault("redis.writeTimeout", defaultRedisIOTimeout)
+	v.SetDefault("redis.maxRetries", 0)
+	v.SetDefault("redis.breakerCooldown", defaultRedisBreakerCool)
 	v.SetDefault("cache.enabled", true)
 	v.SetDefault("cache.ttl", defaultCacheTTL)
 	v.SetDefault("cache.invalidateKey", "")
@@ -313,6 +338,22 @@ func (e *Env) Defaults() {
 	}
 	if p.ConnMaxIdleTimeMinutes <= 0 {
 		p.ConnMaxIdleTimeMinutes = 5
+	}
+
+	if e.Redis.DialTimeout <= 0 {
+		e.Redis.DialTimeout = defaultRedisDialTimeout
+	}
+	if e.Redis.ReadTimeout <= 0 {
+		e.Redis.ReadTimeout = defaultRedisIOTimeout
+	}
+	if e.Redis.WriteTimeout <= 0 {
+		e.Redis.WriteTimeout = defaultRedisIOTimeout
+	}
+	if e.Redis.MaxRetries < 0 {
+		e.Redis.MaxRetries = 0
+	}
+	if e.Redis.BreakerCooldown <= 0 {
+		e.Redis.BreakerCooldown = defaultRedisBreakerCool
 	}
 
 	if strings.TrimSpace(e.Media.StaticPrefix) == "" {
@@ -437,6 +478,7 @@ func (e *Env) Validate() (warnings []string, err error) {
 		warn("redis.clearOnStart: true clears the materm-portal: key prefix at every start")
 	}
 
+	e.validateRedisTimeouts(fail, warn)
 	e.validateCORS(fail)
 	e.validatePortalKeys(strict, fail, warn)
 	e.validateFile(fail)
@@ -547,5 +589,27 @@ func (e *Env) validateInvalidation(strict bool, fail, warn func(string, ...any))
 	}
 	if c.InvalidateMaxAge > time.Hour {
 		warn("cache.invalidateMaxAge: longer than 1h widens the replay window of invalidation messages")
+	}
+}
+
+// validateRedisTimeouts checks the fast-fail keys of redis.*: a timeout outside 10ms-5s is refused (too small
+// fails healthy requests, too large brings back the slow outage), as is a cool-down outside 500ms-1m.
+func (e *Env) validateRedisTimeouts(fail func(string, ...any), warn func(string, ...any)) {
+	for _, t := range []struct {
+		name string
+		d    time.Duration
+	}{{"redis.dialTimeout", e.Redis.DialTimeout}, {"redis.readTimeout", e.Redis.ReadTimeout}, {"redis.writeTimeout", e.Redis.WriteTimeout}} {
+		if t.d != 0 && (t.d < minRedisTimeout || t.d > maxRedisTimeout) { // 0 = not defaulted yet
+			fail("%s: must be between %s and %s", t.name, minRedisTimeout, maxRedisTimeout)
+		}
+	}
+	if e.Redis.MaxRetries > maxRedisMaxRetries {
+		fail("redis.maxRetries: must be between 0 and %d", maxRedisMaxRetries)
+	}
+	if e.Redis.BreakerCooldown != 0 && (e.Redis.BreakerCooldown < minRedisBreakerCooldown || e.Redis.BreakerCooldown > maxRedisBreakerCooldown) {
+		fail("redis.breakerCooldown: must be between %s and %s", minRedisBreakerCooldown, maxRedisBreakerCooldown)
+	}
+	if e.Redis.ReadTimeout > time.Second || e.Redis.DialTimeout > time.Second {
+		warn("redis.dialTimeout/readTimeout: above 1s a Redis outage can again exceed the frontend's 2s fetch timeout")
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -35,6 +36,7 @@ import (
 
 	constants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/redisguard"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/rediskeys"
 )
 
@@ -51,6 +53,10 @@ type Options struct {
 	TTL time.Duration
 	// TagGrace is added to the TTL for the lifetime of a tag set (default 1 h).
 	TagGrace time.Duration
+	// Guard is the Redis circuit breaker of the client (pkg/redisguard). Blank = the one attached to Client, if
+	// any. When the breaker closes after an outage the cache flushes itself once (generation bump): messages
+	// published while Redis was away are lost, so nothing cached before the outage may be served after it.
+	Guard *redisguard.Guard
 }
 
 // FromClient converts a possibly nil *redis.Client into the interface without the typed-nil trap.
@@ -69,6 +75,10 @@ type Cache struct {
 	ttl     time.Duration
 	grace   time.Duration
 	flight  singleflight.Group
+
+	guard     *redisguard.Guard
+	seenEpoch atomic.Uint64 // guard.Epoch() the cache has already flushed for
+	recover   singleflight.Group
 }
 
 // New builds a Cache.
@@ -77,6 +87,11 @@ func New(o Options) *Cache {
 	if c.keys.Prefix() == "" {
 		c.keys = rediskeys.New("")
 	}
+	c.guard = o.Guard
+	if c.guard == nil {
+		c.guard = redisguard.Of(o.Client)
+	}
+	c.seenEpoch.Store(c.guard.Epoch())
 	if c.ttl <= 0 {
 		c.ttl = constants.ExpireTime
 	}
@@ -190,6 +205,12 @@ func Get[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T, St
 	}
 
 	gen, inv, err := c.snapshot(ctx)
+	if err == nil && c.guard.Epoch() != c.seenEpoch.Load() {
+		// Redis is back after an outage: flush once, then read the new generation
+		if err = c.syncEpoch(ctx); err == nil {
+			gen, inv, err = c.snapshot(ctx)
+		}
+	}
 	if err != nil {
 		c.degraded("snapshot", err)
 		payload, lerr := run("-", 0, 0, false)
@@ -238,6 +259,26 @@ func validSpec(s Spec) bool {
 func (c *Cache) degraded(what string, err error) {
 	logs.WarnEvery("publiccache.degraded", time.Minute, "publiccache: Redis error, answering from the database",
 		logs.String("op", what), logs.Err(err))
+}
+
+// syncEpoch bumps the generation once per recovery of the Redis breaker (concurrent callers share the work).
+// The epoch is only marked as handled after the bump succeeded, so a failed bump is retried by the next request.
+func (c *Cache) syncEpoch(ctx context.Context) error {
+	_, err, _ := c.recover.Do("flush", func() (any, error) {
+		target := c.guard.Epoch()
+		if target == c.seenEpoch.Load() {
+			return nil, nil
+		}
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		defer cancel()
+		if err := c.Flush(fctx); err != nil {
+			return nil, err
+		}
+		c.seenEpoch.Store(target)
+		logs.Info("publiccache: Redis came back, cache generation bumped")
+		return nil, nil
+	})
+	return err
 }
 
 // snapshot reads gen and inv in one round trip. Missing counters are 0.

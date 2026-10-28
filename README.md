@@ -106,6 +106,9 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `portal.frontendKeys` | `[]` | accepted `X-Portal-Key` values, at most 2 (rotation), >= 32 printable ASCII bytes each; env `PORTAL_FRONTENDKEYS` (comma separated), never in the repo. Required outside dev; blank in dev refuses every `/api/v1` request |
 | `file.path_ip` | blank | base URL of the file service (media URLs) |
 | `media.staticPrefix` | `static/` | storage keys with this prefix are served by portal-frontend from `public/` |
+| `redis.dialTimeout`, `redis.readTimeout`, `redis.writeTimeout` | `200ms`, `300ms`, `300ms` | fast-fail limits of one Redis attempt (10ms to 5s). A Redis outage must cost milliseconds per request, never a timeout of the frontend's 2 s fetch (B1) |
+| `redis.maxRetries` | `0` | EXTRA attempts of a failed command (0 to 3; 0 = one attempt: go-redis's own default of 3 retries x 5 dials x 100 ms made one command on a dead Redis cost ~2 s) |
+| `redis.breakerCooldown` | `3s` | circuit breaker (`pkg/redisguard`): after a transport failure Redis is not called at all for this long (500ms to 1m), every request is answered from Postgres; then ONE request probes it. On recovery the response cache bumps its generation once |
 | `cache.enabled`, `cache.ttl` | `true`, `24h` | response cache |
 | `cache.invalidateKey` | blank | HMAC secret of the cache-invalidation messages the admin backend publishes (>= 32 printable ASCII bytes; env `CACHE_INVALIDATEKEY`, never in the repo). Blank outside dev: the subscriber does not start (warning); blank in dev: it accepts unsigned messages |
 | `cache.invalidateChannel` | `materm:cms.invalidate` | Redis pub/sub channel of the invalidation messages |
