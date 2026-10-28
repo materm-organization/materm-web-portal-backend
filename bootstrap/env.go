@@ -64,6 +64,14 @@ type ServerConfig struct {
 	ProxyHeader    string        `mapstructure:"proxyHeader"`
 }
 
+// Label is the environment name for log lines: a blank server.env means prod.
+func (s ServerConfig) Label() string {
+	if s.Env == "" {
+		return "prod"
+	}
+	return s.Env
+}
+
 // DatabaseConfig holds the shared pool settings and the one connection the portal uses. Admin is the
 // historical key name (the template is shared with the admin backend); for the portal it is the READ-ONLY
 // role cms_portal_ro (doc/08 section 2.6). The portal never migrates, seeds or writes through GORM models.

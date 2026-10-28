@@ -32,6 +32,9 @@ func App() (*Application, error) {
 		return nil, err
 	}
 
+	logs.Info("✅ - Config loaded",
+		logs.String("env", env.Server.Label()), logs.Int("port", env.Server.Port),
+		logs.Int("portal_keys", len(env.Portal.FrontendKeys)), logs.Int("cors_origins", len(env.Server.CORSOrigins)))
 	app := &Application{Env: env}
 	app.Fiber = NewFiber(env.Server)
 	app.Redis, err = InitializeRedis(env.Redis, env.Strict())

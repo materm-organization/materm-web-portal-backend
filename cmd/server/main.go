@@ -27,6 +27,7 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	logs.Info("🚀 - Starting Materm web portal backend", logs.Int("pid", os.Getpid()))
 	app, err := bootstrap.App()
 	if err != nil {
 		return fatal("startup", err)
@@ -40,9 +41,14 @@ func run() int {
 		return fatal("startup", err)
 	}
 	defer rt.Close()
+	logs.Info("✅ - Modules wired, 16 public endpoints mounted under /api/v1/public (X-Portal-Key required)")
 
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- app.Fiber.Listen(fmt.Sprintf(":%d", app.Env.Server.Port)) }()
+	port := app.Env.Server.Port
+	logs.Info("🌐 - Listening",
+		logs.String("url", fmt.Sprintf("http://localhost:%d", port)), logs.String("health", "/health"), logs.String("ready", "/ready"),
+		logs.String("env", app.Env.Server.Label()))
+	go func() { serveErr <- app.Fiber.Listen(fmt.Sprintf(":%d", port)) }()
 
 	select {
 	case err := <-serveErr:
