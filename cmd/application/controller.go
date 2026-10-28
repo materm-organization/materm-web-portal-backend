@@ -6,6 +6,7 @@ import (
 	formscontroller "github.com/materm-organization/materm-web-portal-backend/modules/forms/controller"
 	gallerycontroller "github.com/materm-organization/materm-web-portal-backend/modules/gallery/controller"
 	pagescontroller "github.com/materm-organization/materm-web-portal-backend/modules/pages/controller"
+	previewcontroller "github.com/materm-organization/materm-web-portal-backend/modules/preview/controller"
 	seocontroller "github.com/materm-organization/materm-web-portal-backend/modules/seo/controller"
 	sitecontroller "github.com/materm-organization/materm-web-portal-backend/modules/site/controller"
 	systemcontroller "github.com/materm-organization/materm-web-portal-backend/modules/system/controller"
@@ -21,6 +22,7 @@ type Controllers struct {
 	Gallery gallerycontroller.GalleryCtrl
 	Faq     faqcontroller.FaqCtrl
 	Forms   formscontroller.FormCtrl
+	Preview previewcontroller.PreviewCtrl
 }
 
 // SetupControllers builds the controllers from the services. Every content controller negotiates the locale
@@ -35,5 +37,6 @@ func SetupControllers(s *Services) *Controllers {
 		Gallery: gallerycontroller.NewGalleryCtrl(s.Gallery, s.Locales),
 		Faq:     faqcontroller.NewFaqCtrl(s.Faq, s.Locales),
 		Forms:   formscontroller.NewFormCtrl(s.Forms, s.Locales),
+		Preview: previewcontroller.NewPreviewCtrl(s.Preview),
 	}
 }

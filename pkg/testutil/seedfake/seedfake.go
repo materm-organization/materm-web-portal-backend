@@ -551,6 +551,11 @@ func (r pageRepo) ByIDs(_ context.Context, locale string, ids []int64) ([]entiti
 	return out, nil
 }
 
+// SharedSections: the bundle has no shared sections.
+func (r pageRepo) SharedSections(context.Context, []int64) ([]entities.PublishedPageSection, error) {
+	return []entities.PublishedPageSection{}, nil
+}
+
 func (r pageRepo) Sections(_ context.Context, pageID int64) ([]entities.PublishedPageSection, error) {
 	for _, p := range r.d.pages {
 		if p.Page.ID != pageID || p.Page.Status != "published" {

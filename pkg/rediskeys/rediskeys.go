@@ -58,6 +58,19 @@ func (k Keys) Locales() string { return k.prefix + "locales" }
 // by the token itself (TTL 10 s).
 func (k Keys) Preview(tokenSHA256Hex string) string { return k.prefix + "preview:" + tokenSHA256Hex }
 
+// PreviewTokenRL counts the P-19 calls made with one preview token in one UTC minute, addressed by the first 32
+// hex characters of the token's sha256 (the same hash as Preview): materm-portal:rl:preview:<hash32>:<yyyymmddhhmm>.
+func (k Keys) PreviewTokenRL(tokenHash32 string, at time.Time) string {
+	return k.prefix + "rl:preview:" + tokenHash32 + ":" + at.UTC().Format("200601021504")
+}
+
+// PreviewKeyRL counts every P-19 call made with one portal key (all tokens together, valid or not) in one UTC
+// minute: materm-portal:rl:preview-key:<keyid16>:<yyyymmddhhmm>. It bounds a caller that sends a different
+// token each time, which the per-token counter cannot.
+func (k Keys) PreviewKeyRL(keyID string, at time.Time) string {
+	return k.prefix + "rl:preview-key:" + keyID + ":" + at.UTC().Format("200601021504")
+}
+
 // ReadRL counts reads of one client address in one minute (only for callers without a portal key).
 func (k Keys) ReadRL(ip string, at time.Time) string {
 	return k.prefix + "rl:read:" + ratelimit.Hash(ip) + ":" + at.UTC().Format("200601021504")

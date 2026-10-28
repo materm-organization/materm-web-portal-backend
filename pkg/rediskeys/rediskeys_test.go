@@ -23,6 +23,7 @@ func TestEveryKeyCarriesThePrefix(t *testing.T) {
 			"FormWindowRL": k.FormWindowRL("contact", "abc", now), "FormDailyRL": k.FormDailyRL("contact", "abc", now),
 			"IPSalt": k.IPSalt(now), "FormKeyMinuteRL": k.FormKeyMinuteRL("abcdef0123456789", now),
 			"FormKeyDailyRL": k.FormKeyDailyRL("abcdef0123456789", now), "FormDup": k.FormDup("contact", "i", "h"),
+			"PreviewTokenRL": k.PreviewTokenRL("abc", now), "PreviewKeyRL": k.PreviewKeyRL("abcdef0123456789", now),
 		} {
 			if !strings.HasPrefix(key, prefix) || key == prefix {
 				t.Errorf("%s(%q) = %q does not carry the prefix", name, prefix, key)
@@ -52,6 +53,8 @@ func TestKeyShapes(t *testing.T) {
 		k.FormKeyMinuteRL("kid", now): "materm-portal:rl:form-key:kid:m:202610271230",
 		k.FormKeyDailyRL("kid", now):  "materm-portal:rl:form-key:kid:d:20261027",
 		k.FormDup("c", "ip", "h32"):   "materm-portal:rl:form:c:ip:dup:h32",
+		k.PreviewTokenRL("h32", now):  "materm-portal:rl:preview:h32:202610271230",
+		k.PreviewKeyRL("kid", now):    "materm-portal:rl:preview-key:kid:202610271230",
 	}
 	for got, exp := range want {
 		if got != exp {

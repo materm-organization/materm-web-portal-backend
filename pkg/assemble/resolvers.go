@@ -113,7 +113,7 @@ func resolveBlogStrip(ctx context.Context, e *env, s *sectionIn) (any, error) {
 			}
 		}
 		// walk the items in the editor's order; the same post may appear twice (the seed shows post 1 four times)
-		for _, it := range items {
+		for i, it := range items {
 			m := asMap(it)
 			id, ok := asID(m["post_id"])
 			if !ok {
@@ -121,6 +121,7 @@ func resolveBlogStrip(ctx context.Context, e *env, s *sectionIn) (any, error) {
 			}
 			card, found := byID[id]
 			if !found {
+				e.in.Warnings.add(WarnPostNotPublished, fmt.Sprintf("%s/props/items/%d/post_id", sectionPath(s.idx), i), "post %d is not published, its slice is left out", id)
 				continue // not published (any more): skipped
 			}
 			picks = append(picks, pick{card: card, image: asMap(m["image"]), excerpt: asString(m["excerpt"])})

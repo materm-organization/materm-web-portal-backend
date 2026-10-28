@@ -2,7 +2,7 @@
 
 # Materm Web Portal Backend
 
-Go backend API for the Materm Web Portal website — built with Fiber v2. It is the **read API** of the public website (doc/08 section 2): it reads published content from PostgreSQL views with a read-only role and is called **only server-to-server** by the portal-frontend with the `X-Portal-Key` header. It never migrates or writes the schema. It provides the foundation (error/response envelopes, request id, access log, portal key guard, `/health`, `/ready`) and, since milestone M2, the 16 public read/submit endpoints below (site, pages, seo, blog, gallery, faq, forms). Preview (`/preview/resolve`, PB-11) comes with M4.
+Go backend API for the Materm Web Portal website — built with Fiber v2. It is the **read API** of the public website (doc/08 section 2): it reads published content from PostgreSQL views with a read-only role and is called **only server-to-server** by the portal-frontend with the `X-Portal-Key` header. It never migrates or writes the schema. It provides the foundation (error/response envelopes, request id, access log, portal key guard, `/health`, `/ready`) and, since milestone M2, the 16 public read/submit endpoints below (site, pages, seo, blog, gallery, faq, forms) plus, since M4, the preview endpoint `GET /api/v1/preview/resolve` (P-19, PB-11): 17 in all.
 
 ---
 
@@ -114,7 +114,8 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `forms.dailyLimit`, `forms.minFillSeconds`, `forms.maxClockSkew` | `20`, `3`, `10m` | fallbacks of the form's own limits (`rate_limit_daily_max`, `min_fill_seconds`) and how far a `rendered_at` may lie in the future |
 | `forms.keyPerMinute`, `forms.keyPerDay` | `30`, `1000` | submissions of ALL visitors together per portal key (doc/10 R-020: a leaked key plus a random `X-Client-IP` per call must not bypass the per-visitor counters); `keyPerMinute` must not exceed `keyPerDay` |
 | `forms.dedupeTTL` | `120s` | an identical submission (same visitor, form and content) inside this window is answered `received` without a second insert (max `24h`) |
-| `preview.cacheTTL` | `10s` | preview snapshot cache |
+| `preview.cacheTTL` | `10s` | how long the snapshot of a consumed preview token stays in Redis (`preview:<sha256>`); a revoked link stops working within this time |
+| `preview.tokenPerMinute`, `preview.keyPerMinute` | `60`, `300` | P-19 calls per preview token per minute (doc/08 section 2.10), and per portal key over all tokens (a caller that sends a different token each time is bounded too) |
 | `site.defaultBaseUrl` | blank | fallback of the `site.base_url` setting |
 
 > `config.enc.yaml` still holds an older schema and must be regenerated from the new `config.yaml` (`make encrypt`) once values are filled in.
@@ -181,6 +182,14 @@ Public content endpoints (all need `X-Portal-Key`; `?locale=` then `Accept-Langu
 | forms | `GET /public/forms/:slug` | P-14 | `v_published_forms`, `v_published_form_fields` |
 | forms | `POST /public/forms/:slug/submissions` | P-15 | the function `forms_submit_form` (the one write) |
 | seo | `GET /public/sitemap` | P-16 | `v_sitemap` |
+
+Preview endpoint (needs `X-Portal-Key` like everything under `/api/v1`; not under `/public`):
+
+| Module | Endpoint | Id | Reads |
+|---|---|---|---|
+| preview | `GET /preview/resolve` (header `X-Preview-Token`, optional `?locale=`, `?path=`) | P-19 | the function `cms_consume_preview_token` (EXECUTE only, the token is hashed in Go), then the same published views as P-06 for what the frozen page snapshot refers to |
+
+`X-Preview-Token` is the raw token the admin issued (never in the query string; a `?token=` is ignored). A usable token answers `200 {kind:"page", locale, page:<the body of P-06>, preview:{entity_type, entity_id, locale, warnings[]}}` rendered from the snapshot frozen when the link was issued; unknown, expired, revoked, bound to another `?path=` or to an entity type without an adapter (posts: M5) all answer the same `401 INVALID_TOKEN`; a missing or malformed header is `422`; `429` with `Retry-After` past the ceilings. Every answer is `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow, noarchive`, `Vary: X-Preview-Token`; it never reads or writes the response cache. A token works any number of times until it expires.
 
 Page sections of `GET /public/pages/resolve` get a `resolved` member per section type (`blog_strip`, `gallery_cards`, `photo_story`, `contact_section`, `faq`, `post_list`, ...). P-15 never reveals spam handling (a bot gets the same `200 {"status":"received"}`), rate limits answer 429 with `Retry-After`, and the submission answer is `Cache-Control: no-store`.
 

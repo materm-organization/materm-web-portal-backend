@@ -4,6 +4,7 @@ package application
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
@@ -118,9 +119,9 @@ func TestReadyIsDownWithoutThePublicViews(t *testing.T) {
 	}
 }
 
-// The 16 endpoints through the real Setup (real repositories on the read-only role, real services, the scratch
+// The 17 endpoints (P-01 ... P-16 and P-19 preview) through the real Setup (real repositories on the read-only role, real services, the scratch
 // Redis for cache, rate limits and the IP salt): each answers what the fixture says, with and without the key.
-func TestBootServesTheSixteenEndpoints(t *testing.T) {
+func TestBootServesTheSeventeenEndpoints(t *testing.T) {
 	s := schemadb.Shared(t)
 	r := redistest.New(t)
 	// Setup names its Redis keys under the production prefix (materm-portal:), not under redistest's random one:
@@ -164,6 +165,32 @@ func TestBootServesTheSixteenEndpoints(t *testing.T) {
 		if status, body := req(t, rt.Fiber, "GET", c.path, key); status != c.want {
 			t.Errorf("%s: %d %v, want %d", c.path, status, body, c.want)
 		}
+	}
+	// P-19: a token issued the way the admin does (a history revision + the sha256 of the token) opens the frozen page;
+	// the token travels in the header only; an unknown one is the same 401 for everybody
+	const rawToken = "boot-test-preview-token-0123456789ABCDEFGHIJ"
+	hash := sha256.Sum256([]byte(rawToken))
+	var rev int64
+	if err = s.Owner.QueryRowContext(context.Background(), `insert into cms_content_revisions (entity_type, entity_id, version, kind, snapshot, change_note)
+		values ('cms.pages', 987654, 1, 'history', '{"page":{"key":"boot","name":"Boot","path":"/boot"},"translations":[{"locale_code":"en","title":"Boot preview"}],"sections":[]}'::jsonb, 'preview')
+		returning id`).Scan(&rev); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Owner.ExecContext(context.Background(), `insert into cms_preview_tokens (token_hash, revision_id, locale_code, expires_at) values ($1, $2, 'en', now() + interval '10 minutes')`, hash[:], rev); err != nil {
+		t.Fatal(err)
+	}
+	pv := map[string]string{portalkey.Header: testKey, "X-Preview-Token": rawToken}
+	if status, body := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve", pv); status != 200 || body["data"].(map[string]any)["kind"] != "page" {
+		t.Errorf("P-19: %d %v", status, body)
+	}
+	if status, body := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve?path=/elsewhere", pv); status != 401 || body["code"] != "INVALID_TOKEN" {
+		t.Errorf("P-19 wrong path: %d %v", status, body)
+	}
+	if status, _ := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve", map[string]string{portalkey.Header: testKey, "X-Preview-Token": "boot-test-unknown-token-0123456789ABCDEFGHIJKL"}); status != 401 {
+		t.Errorf("P-19 unknown token: %d", status)
+	}
+	if status, _ := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve", map[string]string{"X-Preview-Token": rawToken}); status != 401 {
+		t.Errorf("P-19 without the portal key: %d", status)
 	}
 	// P-15: a valid submission is stored through forms_submit_form (the one write the read-only role may do)
 	body := fmt.Sprintf(`{"locale":"en","source_path":"/contact","data":{"name":"Noy","phone":"","email":"noy@example.test","topic":"other","message":"Hello from the boot test %d."},"honeypot":"","elapsed_ms":9000}`, nonce)

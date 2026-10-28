@@ -11,6 +11,7 @@ import (
 	formsservices "github.com/materm-organization/materm-web-portal-backend/modules/forms/services"
 	galleryservices "github.com/materm-organization/materm-web-portal-backend/modules/gallery/services"
 	pagesservices "github.com/materm-organization/materm-web-portal-backend/modules/pages/services"
+	previewservices "github.com/materm-organization/materm-web-portal-backend/modules/preview/services"
 	seoservices "github.com/materm-organization/materm-web-portal-backend/modules/seo/services"
 	siteservices "github.com/materm-organization/materm-web-portal-backend/modules/site/services"
 	systemservices "github.com/materm-organization/materm-web-portal-backend/modules/system/services"
@@ -41,6 +42,7 @@ type Services struct {
 	Gallery galleryservices.GalleryService // P-11, P-12
 	Faq     faqservices.FaqService         // P-13
 	Forms   formsservices.FormService      // P-14, P-15
+	Preview previewservices.PreviewService // P-19
 }
 
 // localesResource is the cache resource of the locale chain.
@@ -61,7 +63,8 @@ func SetupServices(repos *Repositories, env *bootstrap.Env) *Services {
 	assembler := assemble.New(assemble.Deps{
 		Locales: content.Locales, Pages: content.Pages, Posts: content.Posts, Taxonomy: content.Taxonomy,
 		Albums: content.Albums, FAQ: content.FAQ, Forms: content.Forms, Settings: content.Settings,
-		Media: repos.Media, MediaLookup: lookup, DefaultBaseURL: baseURL,
+		Shared: content.Pages,
+		Media:  repos.Media, MediaLookup: lookup, DefaultBaseURL: baseURL,
 	})
 
 	return &Services{
@@ -89,6 +92,13 @@ func SetupServices(repos *Repositories, env *bootstrap.Env) *Services {
 			Content: content, Media: repos.Media, Lookup: lookup, Cache: cache,
 		}),
 		Faq: faqservices.NewFaqService(faqservices.Deps{Content: content, Cache: cache}),
+		Preview: previewservices.NewPreviewService(previewservices.Deps{
+			Tokens: repos.PreviewTokens, Assembler: assembler, Chains: locales, Redis: rc,
+			Limiter: ratelimit.NewRedis(repos.Redis), Keys: keys,
+			Options: previewservices.Options{
+				CacheTTL: env.Preview.CacheTTL, TokenPerMinute: env.Preview.TokenPerMinute, KeyPerMinute: env.Preview.KeyPerMinute,
+			},
+		}),
 		Forms: formsservices.NewFormService(formsservices.Deps{
 			Forms: content.Forms, Submitter: repos.Submissions, Cache: cache,
 			Hasher: iphash.New(rc, keys), Limiter: ratelimit.NewRedis(repos.Redis), Redis: rc, Keys: keys,

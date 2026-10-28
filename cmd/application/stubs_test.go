@@ -10,6 +10,7 @@ import (
 	formsservices "github.com/materm-organization/materm-web-portal-backend/modules/forms/services"
 	gallerymodels "github.com/materm-organization/materm-web-portal-backend/modules/gallery/models"
 	pagesmodels "github.com/materm-organization/materm-web-portal-backend/modules/pages/models"
+	previewservices "github.com/materm-organization/materm-web-portal-backend/modules/preview/services"
 	seomodels "github.com/materm-organization/materm-web-portal-backend/modules/seo/models"
 	sitemodels "github.com/materm-organization/materm-web-portal-backend/modules/site/models"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
@@ -87,9 +88,15 @@ func (stubForms) Definition(context.Context, string, string) (*formsmodels.FormD
 }
 func (stubForms) Submit(context.Context, formsservices.SubmitInput) error { return apperror.NotFound() }
 
+type stubPreview struct{}
+
+func (stubPreview) Resolve(context.Context, previewservices.Input) (*previewservices.Result, error) {
+	return nil, previewservices.InvalidToken()
+}
+
 // stubServices is Services with every content module stubbed; the caller fills System and Locales.
 func stubServices() *Services {
 	return &Services{
-		Site: stubSite{}, Pages: stubPages{}, SEO: stubSEO{}, Blog: stubBlog{}, Gallery: stubGallery{}, Faq: stubFaq{}, Forms: stubForms{},
+		Site: stubSite{}, Pages: stubPages{}, SEO: stubSEO{}, Blog: stubBlog{}, Gallery: stubGallery{}, Faq: stubFaq{}, Forms: stubForms{}, Preview: stubPreview{},
 	}
 }

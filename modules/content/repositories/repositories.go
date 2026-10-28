@@ -44,6 +44,11 @@ type PageRepository interface {
 	ByIDs(ctx context.Context, locale string, ids []int64) ([]entities.PublishedPage, error)
 	// Sections returns the visible sections of a published page ordered by sort_order.
 	Sections(ctx context.Context, pageID int64) ([]entities.PublishedPageSection, error)
+	// SharedSections returns, for each given shared section id that is published, one row of
+	// v_published_page_sections that uses it (the view resolves the shared content into props). It is how a
+	// preview learns the content of a shared section, which the portal role cannot read directly. Ids that no
+	// published page uses are absent.
+	SharedSections(ctx context.Context, ids []int64) ([]entities.PublishedPageSection, error)
 }
 
 // ---- taxonomy ----------------------------------------------------------------------------------------------------

@@ -156,7 +156,7 @@ func TestModuleRouteOnAPIGroup(t *testing.T) {
 	}
 }
 
-// The 16 public endpoints of milestone M2 (doc/05 P-01 ... P-16) are all mounted, each with the PortalKey
+// The 17 endpoints (P-01 ... P-16 of milestone M2 and P-19 preview of M4) are all mounted, each with the PortalKey
 // policy. The list is the contract: a route that disappears (or one that appears without being added here and
 // to the README table) fails this test.
 func TestAllPublicEndpointsAreMounted(t *testing.T) {
@@ -167,6 +167,7 @@ func TestAllPublicEndpointsAreMounted(t *testing.T) {
 		"GET /api/v1/public/posts", "GET /api/v1/public/posts/:slug", "GET /api/v1/public/categories", "GET /api/v1/public/tags",
 		"GET /api/v1/public/albums", "GET /api/v1/public/albums/:key", "GET /api/v1/public/faq/:group_key",
 		"GET /api/v1/public/forms/:slug", "POST /api/v1/public/forms/:slug/submissions", "GET /api/v1/public/sitemap",
+		"GET /api/v1/preview/resolve",
 	}
 	got := map[string]bool{}
 	for _, e := range reg.Entries() {

@@ -8,6 +8,7 @@ import (
 	formsroutes "github.com/materm-organization/materm-web-portal-backend/modules/forms/routes"
 	galleryroutes "github.com/materm-organization/materm-web-portal-backend/modules/gallery/routes"
 	pagesroutes "github.com/materm-organization/materm-web-portal-backend/modules/pages/routes"
+	previewroutes "github.com/materm-organization/materm-web-portal-backend/modules/preview/routes"
 	seoroutes "github.com/materm-organization/materm-web-portal-backend/modules/seo/routes"
 	siteroutes "github.com/materm-organization/materm-web-portal-backend/modules/site/routes"
 	systemroutes "github.com/materm-organization/materm-web-portal-backend/modules/system/routes"
@@ -23,7 +24,7 @@ import (
 //     (portalkey.Verifier.Middleware), so each route is PortalKey() and a path that matches nothing answers
 //     401 without the key.
 //
-// Every content module registers on the api group below (PreviewResolve, PB-11, will be the next one); the
+// Every content module registers on the api group below (P-19 preview is the last one); the
 // group is the second result so that tests can add routes of their own.
 func SetupRouter(app *fiber.App, c *Controllers, keys *portalkey.Verifier) (*routepolicy.Registry, *routepolicy.Group) {
 	reg := routepolicy.NewRegistry()
@@ -39,5 +40,6 @@ func SetupRouter(app *fiber.App, c *Controllers, keys *portalkey.Verifier) (*rou
 	galleryroutes.Register(api, c.Gallery) // P-11, P-12
 	faqroutes.Register(api, c.Faq)         // P-13
 	formsroutes.Register(api, c.Forms)     // P-14, P-15
+	previewroutes.Register(api, c.Preview) // P-19 (under /preview, not /public)
 	return reg, api
 }

@@ -18,8 +18,8 @@
 // A section whose key@version is not registered is skipped and counted (Assembler.Skipped), never an error: a
 // newer admin must not break an older portal.
 //
-// The same assembler serves the public endpoint and, later, preview (T1.4.5): both build PageInput; only the
-// source of the rows differs.
+// The same assembler serves the public endpoint and preview (T1.4.5): both build PageInput; only the source of
+// the rows differs (the views, or a frozen snapshot through raw.go).
 package assemble
 
 import (
@@ -72,6 +72,11 @@ type (
 	}
 )
 
+// SharedSource reads the PUBLISHED content of shared sections (modules/content PageRepository.SharedSections).
+type SharedSource interface {
+	SharedSections(ctx context.Context, ids []int64) ([]entities.PublishedPageSection, error)
+}
+
 // Deps is everything the assembler reads. Every field except Registry is required.
 type Deps struct {
 	Locales  LocaleSource
@@ -86,6 +91,10 @@ type Deps struct {
 	// Media builds URLs and MediaLookup loads the assets of data.media.
 	Media       *media.Builder
 	MediaLookup media.Lookup
+
+	// Shared reads the content of shared sections for preview (a snapshot keeps only the reference). Optional:
+	// without it a preview leaves shared sections out with a warning.
+	Shared SharedSource
 
 	// DefaultBaseURL is site.defaultBaseUrl: used when the setting site.base_url is blank.
 	DefaultBaseURL string
@@ -176,17 +185,24 @@ type PageInput struct {
 	Chain    []string
 	Page     *entities.PublishedPage
 	Sections []entities.PublishedPageSection
+	// Warnings, when set, switches on PREVIEW mode (see Warnings): an unpublished reference keeps its section
+	// with an empty `resolved` and every omission is reported. Nil (the public endpoint) leaves the output
+	// exactly as P-06 has always produced it.
+	Warnings *Warnings
 }
 
 // PageResult is the page and the public tags it depends on (doc/08 section 2.8).
 type PageResult struct {
 	Data *PageData
 	Tags []string
+	// Warnings is set in preview mode only (PageInput.Warnings != nil).
+	Warnings []Warning
 }
 
 // ---- assembly ----------------------------------------------------------------------------------------------------
 
 type prepared struct {
+	idx       int // position in PageInput.Sections (the /sections/<idx> of a warning)
 	row       entities.PublishedPageSection
 	spec      *sectionType
 	collapsed map[string]any
@@ -215,19 +231,21 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 
 	// 1. collapse the locale maps of every known section
 	var secs []*prepared
-	for _, row := range in.Sections {
+	for i, row := range in.Sections {
 		spec := a.reg.lookup(row.SectionKey, row.SectionVersion)
 		if spec == nil {
 			a.skip(in, row, "unknown_type")
+			in.Warnings.add(WarnSectionTypeUnknown, sectionPath(i), "section type %s@%d is not known to this portal", row.SectionKey, row.SectionVersion)
 			continue
 		}
 		raw, derr := decodeProps(row.Props)
 		if derr != nil {
 			a.skip(in, row, "bad_props")
+			in.Warnings.add(WarnSectionTypeUnknown, sectionPath(i)+"/props", "the props of %s are not a JSON object", row.SectionKey)
 			continue
 		}
 		collapsed, fb := localize.Collapse(raw, spec.hints, in.Chain)
-		secs = append(secs, &prepared{row: row, spec: spec, collapsed: collapsed, fallback: fb})
+		secs = append(secs, &prepared{idx: i, row: row, spec: spec, collapsed: collapsed, fallback: fb})
 	}
 
 	// 2. one batched lookup for every page / post that a link or a rich text mark refers to
@@ -243,6 +261,9 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 	tr.pages = e.links.pages
 	tr.resolver = e.links.resolver()
 	e.t = tr
+	if in.Warnings.On() {
+		e.warnLinks(secs)
+	}
 
 	// 3. structure + resolve
 	data := &PageData{Locale: in.Locale, Sections: []Section{}}
@@ -253,12 +274,17 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 		if props == nil {
 			props = map[string]any{}
 		}
-		resolved, rerr := s.spec.resolve(ctx, e, &sectionIn{row: s.row, props: props})
+		resolved, rerr := s.spec.resolve(ctx, e, &sectionIn{idx: s.idx, row: s.row, props: props})
 		if rerr != nil {
 			return nil, fmt.Errorf("assemble: section %s: %w", s.row.SectionKey, rerr)
 		}
 		if resolved == nil {
-			continue // the entity it shows is not published: leave the whole section out
+			if !in.Warnings.On() {
+				continue // the entity it shows is not published: leave the whole section out
+			}
+			// preview: keep the section (the editor sees where it goes), empty `resolved`, and say why
+			in.Warnings.add(WarnReferenceNotPublished, sectionPath(s.idx), "%s shows an entity that is not published (or was not chosen yet)", s.row.SectionKey)
+			resolved = map[string]any{}
 		}
 		pb, perr := json.Marshal(props)
 		if perr != nil {
@@ -327,7 +353,7 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 	}
 	data.Page = PageInfo{
 		ID: p.PageID, PublicID: p.PublicID, Key: p.Key, Template: p.Template, Path: p.Path, IsHome: p.IsHome,
-		ResolvedLocale: p.ResolvedLocale, IsFallback: p.IsFallback, Title: p.Title, UpdatedAt: readkit.ISO(p.UpdatedAt), SEO: seo,
+		ResolvedLocale: p.ResolvedLocale, IsFallback: p.IsFallback, Title: p.Title, UpdatedAt: isoOrBlank(p.UpdatedAt), SEO: seo,
 	}
 
 	// 5. media
@@ -337,6 +363,34 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 	}
 	data.Media = m
 	return &PageResult{Data: data, Tags: e.tags.list()}, nil
+}
+
+// warnLinks (preview only) reports, per section, the pages and posts that a link or a rich-text mark refers to
+// and that are not published: their href is null / the mark loses its link.
+func (e *env) warnLinks(secs []*prepared) {
+	for _, s := range secs {
+		c := newTransformer()
+		c.collecting = true
+		c.apply(s.spec.plan, s.collapsed)
+		for _, id := range sortedIDs(c.pageIDs) {
+			if _, ok := e.links.pages[id]; !ok {
+				e.in.Warnings.add(WarnLinkPageNotPublished, sectionPath(s.idx), "a link points at page %d, which is not published", id)
+			}
+		}
+		for _, id := range sortedIDs(c.postIDs) {
+			if _, ok := e.links.posts[id]; !ok {
+				e.in.Warnings.add(WarnPostNotPublished, sectionPath(s.idx), "a link points at post %d, which is not published", id)
+			}
+		}
+	}
+}
+
+// isoOrBlank is readkit.ISO, but "" for the zero time (a preview has no updated_at of the live row).
+func isoOrBlank(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return readkit.ISO(t)
 }
 
 func decodeProps(b entities.JSONB) (map[string]any, error) {
@@ -377,6 +431,7 @@ func (e *env) locale() string { return e.in.Locale }
 
 // sectionIn is the input of a resolver: the row (raw ids, config) and its transformed props.
 type sectionIn struct {
+	idx   int // position in PageInput.Sections (warnings)
 	row   entities.PublishedPageSection
 	props map[string]any
 }

@@ -192,9 +192,13 @@ type FormsConfig struct {
 	DedupeTTL time.Duration `mapstructure:"dedupeTTL"`
 }
 
-// PreviewConfig: CacheTTL is how long a consumed preview snapshot is kept in Redis.
+// PreviewConfig: CacheTTL is how long a consumed preview snapshot is kept in Redis; TokenPerMinute caps the
+// P-19 calls of one preview token per minute (doc/08 section 2.10: 60) and KeyPerMinute the calls of one portal
+// key, all tokens together, so that a caller who sends a different token each time is bounded too.
 type PreviewConfig struct {
-	CacheTTL time.Duration `mapstructure:"cacheTTL"`
+	CacheTTL       time.Duration `mapstructure:"cacheTTL"`
+	TokenPerMinute int           `mapstructure:"tokenPerMinute"`
+	KeyPerMinute   int           `mapstructure:"keyPerMinute"`
 }
 
 // SiteConfig: DefaultBaseURL is the fallback of the site.base_url setting (canonical URLs).
@@ -242,6 +246,8 @@ const (
 	defaultKeyPerDay     = 1000
 	defaultDedupeTTL     = 120 * time.Second
 	defaultPreviewTTL    = 10 * time.Second
+	defaultPreviewToken  = 60
+	defaultPreviewKey    = 300
 
 	// DefaultInvalidateChannel equals publiccache.DefaultChannel (a test keeps them in step; bootstrap does not
 	// import the cache package).
@@ -273,6 +279,8 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("forms.keyPerDay", defaultKeyPerDay)
 	v.SetDefault("forms.dedupeTTL", defaultDedupeTTL)
 	v.SetDefault("preview.cacheTTL", defaultPreviewTTL)
+	v.SetDefault("preview.tokenPerMinute", defaultPreviewToken)
+	v.SetDefault("preview.keyPerMinute", defaultPreviewKey)
 	v.SetDefault("site.defaultBaseUrl", "")
 }
 
@@ -344,6 +352,12 @@ func (e *Env) Defaults() {
 	}
 	if e.Preview.CacheTTL <= 0 {
 		e.Preview.CacheTTL = defaultPreviewTTL
+	}
+	if e.Preview.TokenPerMinute <= 0 {
+		e.Preview.TokenPerMinute = defaultPreviewToken
+	}
+	if e.Preview.KeyPerMinute <= 0 {
+		e.Preview.KeyPerMinute = defaultPreviewKey
 	}
 	e.Site.DefaultBaseURL = strings.TrimSpace(e.Site.DefaultBaseURL)
 }

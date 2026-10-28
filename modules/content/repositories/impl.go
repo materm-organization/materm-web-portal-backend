@@ -71,6 +71,17 @@ func (r *pageRepo) Sections(ctx context.Context, pageID int64) ([]entities.Publi
 		Where("page_id = ?", pageID).Order("sort_order, section_id"))
 }
 
+func (r *pageRepo) SharedSections(ctx context.Context, ids []int64) ([]entities.PublishedPageSection, error) {
+	if len(ids) == 0 {
+		return []entities.PublishedPageSection{}, nil
+	}
+	if err := checkIDs(ids); err != nil {
+		return nil, err
+	}
+	return list[entities.PublishedPageSection](sel[entities.PublishedPageSection](r.db.WithContext(ctx)).
+		Where("shared_section_id IN ?", ids).Order("shared_section_id, page_id, section_id"))
+}
+
 type taxonomyRepo struct{ db *gorm.DB }
 
 func (r *taxonomyRepo) Categories(ctx context.Context, locale string) ([]entities.PublishedCategory, error) {
