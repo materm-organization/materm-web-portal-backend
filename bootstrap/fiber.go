@@ -51,6 +51,7 @@ func NewFiber(cfg ServerConfig) *fiber.App {
 		fiberCfg.ProxyHeader = cfg.ProxyHeader
 	}
 	app := fiber.New(fiberCfg)
+	logs.SetSourceTrace(sourceTraceEnabled(cfg.Env))
 
 	app.Use(requestid.New())
 	app.Use(newAccessLog(prettyAccessLog(cfg.Env)))
@@ -92,6 +93,18 @@ func prettyAccessLog(env string) bool {
 	case "pretty", "on", "true", "1":
 		return true
 	case "off", "false", "0", "no", "json":
+		return false
+	}
+	return strings.EqualFold(env, "dev")
+}
+
+// sourceTraceEnabled: the "From Redis / From Postgres" lines (logs.CacheKey, logs.Source) are on in development
+// only. LOG_SOURCE=on|off overrides.
+func sourceTraceEnabled(env string) bool {
+	switch strings.ToLower(os.Getenv("LOG_SOURCE")) {
+	case "on", "true", "1", "pretty":
+		return true
+	case "off", "false", "0", "no":
 		return false
 	}
 	return strings.EqualFold(env, "dev")

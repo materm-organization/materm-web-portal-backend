@@ -185,6 +185,7 @@ func Get[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T, St
 		if err != nil {
 			return zero, Bypass, err
 		}
+		logs.Source(spec.Resource, "Postgres (cache off)")
 		return decode(payload, Bypass)
 	}
 
@@ -195,14 +196,17 @@ func Get[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T, St
 		if lerr != nil {
 			return zero, Bypass, lerr
 		}
+		logs.Source(spec.Resource, "Postgres (Redis failed)")
 		return decode(payload, Bypass)
 	}
 	key := c.keys.Cache(gen, spec.Resource, spec.Locale, hash)
+	logs.CacheKey(key)
 	raw, err := c.client.Get(ctx, key).Bytes()
 	switch {
 	case err == nil:
 		var out T
 		if json.Unmarshal(raw, &out) == nil {
+			logs.Source(spec.Resource, "Redis")
 			return out, Hit, nil
 		}
 		_ = c.client.Del(ctx, key).Err() // corrupt entry: drop it and reload
@@ -212,12 +216,14 @@ func Get[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T, St
 		if lerr != nil {
 			return zero, Bypass, lerr
 		}
+		logs.Source(spec.Resource, "Postgres (Redis failed)")
 		return decode(payload, Bypass)
 	}
 	payload, err := run(key, gen, inv, true)
 	if err != nil {
 		return zero, Miss, err
 	}
+	logs.Source(spec.Resource, "Postgres")
 	return decode(payload, Miss)
 }
 

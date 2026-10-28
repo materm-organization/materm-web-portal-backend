@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -86,6 +87,27 @@ func setup() {
 	logger = zap.New(zapcore.NewTee(cores...), zap.AddCaller(), zap.AddCallerSkip(1))
 	if len(cores) > 1 {
 		fileLogger = zap.New(cores[1], zap.AddCaller(), zap.AddCallerSkip(1))
+	}
+}
+
+var sourceTrace atomic.Bool
+
+// SetSourceTrace turns the data-source lines (CacheKey, Source) on or off. They are for development: they
+// name the cache key and say where an answer came from, which is noise (and key material) in production.
+func SetSourceTrace(on bool) { sourceTrace.Store(on) }
+
+// CacheKey logs the Redis key about to be read ("🚀 - Cache Key"). A no-op unless SetSourceTrace(true).
+func CacheKey(key string) {
+	if sourceTrace.Load() {
+		logger.Info("🚀 - Cache Key", zap.String("cache_key", key))
+	}
+}
+
+// Source logs where an answer came from, e.g. Source("Principal", "Redis") -> "🚀 - Principal From Redis"
+// (from is "Redis", "Postgres" or "Memory"). A no-op unless SetSourceTrace(true).
+func Source(what, from string) {
+	if sourceTrace.Load() {
+		logger.Info("🚀 - " + what + " From " + from)
 	}
 }
 
