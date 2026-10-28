@@ -48,8 +48,9 @@ func newLumberjack(date string) *lumberjack.Logger {
 }
 
 var (
-	logger *zap.Logger
-	once   sync.Once
+	logger     *zap.Logger
+	fileLogger *zap.Logger // JSON file sink only (nil when LOG_FILE=off)
+	once       sync.Once
 )
 
 func init() {
@@ -83,6 +84,18 @@ func setup() {
 	}
 
 	logger = zap.New(zapcore.NewTee(cores...), zap.AddCaller(), zap.AddCallerSkip(1))
+	if len(cores) > 1 {
+		fileLogger = zap.New(cores[1], zap.AddCaller(), zap.AddCallerSkip(1))
+	}
+}
+
+// InfoFileOnly writes an info line to the JSON log file only, not to stdout. The access log uses it in
+// development, where stdout shows the one-line console format instead (bootstrap accessLog); with the file sink
+// off (LOG_FILE=off) the line is dropped.
+func InfoFileOnly(msg string, fields ...zap.Field) {
+	if fileLogger != nil {
+		fileLogger.Info(msg, fields...)
+	}
 }
 
 // Field is a structured log field (zap.Field); build them with String, Int, Bool, Err, Duration.

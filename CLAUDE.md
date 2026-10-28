@@ -84,7 +84,7 @@ Prefix `materm-portal:` (`constants.AppKeyPrefix`); **never FLUSH** (the Redis i
 | Path | Purpose |
 |---|---|
 | `apperror/` `response/` `pagination/` `requestid/` | shared kernel, identical to the admin backend |
-| `logs/` | zap JSON to stdout + `logs/YYYY-MM-DD.log` (`LOG_FILE=off` for containers/tests); `Info/Warn/WarnEvery/Error`, field helpers, `WithRequest`/`FromContext` (request id only — no user id here) |
+| `logs/` | zap JSON to stdout + `logs/YYYY-MM-DD.log` (`LOG_FILE=off` for containers/tests; with `server.env: dev` stdout shows one readable line per request instead (`15:04:05 | 200 | 1.6s | 127.0.0.1 | GET | /api/v1/... | -`, never the query string; the JSON line then goes to the file only; `LOG_CONSOLE=pretty|off` overrides; `NO_COLOR` turns the colors off); `Info/Warn/WarnEvery/Error`, field helpers, `WithRequest`/`FromContext` (request id only — no user id here) |
 | `portalkey/` `routepolicy/` | see above |
 | `ratelimit/` `rediskeys/` `cache/` | Redis building blocks (`rediskeys.Inv()` = invalidation counter) |
 | `publiccache/` | response cache with generation + tag sets, stampede protection, signed invalidation subscriber (above) |
