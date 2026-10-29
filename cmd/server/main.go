@@ -15,6 +15,7 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
 	"github.com/materm-organization/materm-web-portal-backend/cmd/application"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 )
 
 // shutdownTimeout is how long in-flight requests get to finish.
@@ -43,8 +44,16 @@ func run() int {
 	defer rt.Close()
 	logs.Info("✅ - Modules wired, 16 public endpoints mounted under /api/v1/public (X-Portal-Key required)")
 
-	serveErr := make(chan error, 1)
+	serveErr := make(chan error, 2)
 	port := app.Env.Server.Port
+	if mc := app.Env.Metrics; mc.Enabled() {
+		// internal-only listener (Q-B10): a separate port, GET /metrics only, never mounted on the public app
+		metricsApp := metrics.NewApp(metrics.Default)
+		defer func() { _ = metricsApp.ShutdownWithTimeout(2 * time.Second) }()
+		addr := metrics.Addr(mc.Bind, mc.Port)
+		logs.Info("📈 - Metrics listener (internal port, no authentication)", logs.String("addr", addr))
+		go func() { serveErr <- metricsApp.Listen(addr) }()
+	}
 	logs.Info("🌐 - Listening",
 		logs.String("url", fmt.Sprintf("http://localhost:%d", port)), logs.String("health", "/health"), logs.String("ready", "/ready"),
 		logs.String("env", app.Env.Server.Label()))

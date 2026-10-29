@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 )
 
 func TestValidTag(t *testing.T) {
@@ -422,5 +424,25 @@ func TestInvalidSpecBypasses(t *testing.T) {
 	_, st, err := Get(context.Background(), c, Spec{Resource: "page", Locale: "en"}, func(context.Context) (int, []string, error) { return 1, nil, nil })
 	if err != nil || st != Bypass {
 		t.Errorf("unreachable redis: %v %v", st, err)
+	}
+}
+
+// A lookup without Redis is a bypass, counted once per answered request; a loader error counts nothing.
+func TestGetCountsBypassInTheMetrics(t *testing.T) {
+	c := New(Options{Enabled: true}) // no client: the loader answers
+	before := metrics.CacheCount("bypass")
+	load := func(context.Context) (map[string]int, []string, error) { return map[string]int{"a": 1}, nil, nil }
+	if _, st, err := Get(context.Background(), c, Spec{Resource: "page", Locale: "en"}, load); err != nil || st != Bypass {
+		t.Fatal(st, err)
+	}
+	if got := metrics.CacheCount("bypass"); got != before+1 {
+		t.Errorf("bypass counter +%d, want +1", got-before)
+	}
+	fail := func(context.Context) (map[string]int, []string, error) { return nil, nil, errors.New("db down") }
+	if _, _, err := Get(context.Background(), c, Spec{Resource: "page", Locale: "en"}, fail); err == nil {
+		t.Fatal("loader error must be returned")
+	}
+	if got := metrics.CacheCount("bypass"); got != before+1 {
+		t.Error("a failed load must not count as an answered lookup")
 	}
 }

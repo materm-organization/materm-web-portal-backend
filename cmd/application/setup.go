@@ -11,6 +11,7 @@ import (
 
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/publiccache"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
@@ -42,11 +43,24 @@ func Setup(ctx context.Context, app *bootstrap.Application) (*Runtime, error) {
 		CloseRepositories(repos)
 		return nil, err
 	}
+	registerMetrics(repos)
 	services := SetupServices(repos, app.Env)
 	controllers := SetupControllers(services)
 	keys := portalkey.New(app.Env.Portal.FrontendKeys)
 	reg, api := SetupRouter(app.Fiber, controllers, keys)
 	return &Runtime{Fiber: app.Fiber, Repos: repos, Services: services, Registry: reg, API: api, Invalidation: invalidation}, nil
+}
+
+// registerMetrics hooks the pool of the database and the Redis breaker into the /metrics registry (a later
+// Setup replaces the earlier one, so the boot tests may call it repeatedly).
+func registerMetrics(repos *Repositories) {
+	metrics.RegisterRuntime()
+	if repos.DB != nil {
+		if sqlDB, err := repos.DB.DB(); err == nil {
+			metrics.RegisterDBPool(sqlDB)
+		}
+	}
+	metrics.RegisterRedisBreaker(repos.RC)
 }
 
 // Close stops the invalidation subscriber (cancels its loop and a pending second delete, closes the

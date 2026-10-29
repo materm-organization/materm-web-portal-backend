@@ -36,6 +36,7 @@ import (
 
 	constants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/redisguard"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/rediskeys"
 )
@@ -158,6 +159,14 @@ type Loader[T any] func(ctx context.Context) (value T, tags []string, err error)
 // callers) and stored. Each caller receives its own decoded copy, so results may be modified freely. An error
 // from load is returned as is and is never cached.
 func Get[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T, Status, error) {
+	v, st, err := lookup(ctx, c, spec, load)
+	if err == nil {
+		metrics.Cache(string(st))
+	}
+	return v, st, err
+}
+
+func lookup[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T, Status, error) {
 	var zero T
 	hash := ParamsHash(spec.Params)
 	flightKey := spec.Resource + "|" + spec.Locale + "|" + hash

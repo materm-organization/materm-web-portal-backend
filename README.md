@@ -119,6 +119,7 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `forms.dedupeTTL` | `120s` | an identical submission (same visitor, form and content) inside this window is answered `received` without a second insert (max `24h`) |
 | `preview.cacheTTL` | `10s` | how long the snapshot of a consumed preview token stays in Redis (`preview:<sha256>`); a revoked link stops working within this time |
 | `preview.tokenPerMinute`, `preview.keyPerMinute` | `60`, `300` | P-19 calls per preview token per minute (doc/08 section 2.10), and per portal key over all tokens (a caller that sends a different token each time is bounded too) |
+| `metrics.port`, `metrics.bind` | `0` (off), `127.0.0.1` | Prometheus `GET /metrics` on a SEPARATE listener `bind:port` (never on `server.port`; no authentication, so keep it off every ingress; in a container set `METRICS_BIND=0.0.0.0` and publish the port to the monitoring network only). Names `materm_portal_*`: `http_requests_total` and `http_request_duration_seconds` (labels method, route template, status class), `rate_limited_total`, `cache_requests_total{result=hit\|miss\|bypass}`, `invalidate_events_total{result=applied\|rejected\|ignored}`, `redis_breaker_open` / `_trips_total` / `_skipped_total`, `db_pool_*`, plus `go_goroutines` and `go_memstats_alloc_bytes` |
 | `site.defaultBaseUrl` | blank | fallback of the `site.base_url` setting |
 
 > `config.enc.yaml` still holds an older schema and must be regenerated from the new `config.yaml` (`make encrypt`) once values are filled in.

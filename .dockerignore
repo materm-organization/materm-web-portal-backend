@@ -34,3 +34,11 @@ coverage.out
 Dockerfile
 docker-compose*.yml
 .dockerignore
+
+# The real configuration never enters an image (it is mounted or comes from the environment)
+config.yaml
+config.enc.yaml
+.sops.yaml
+*.pem
+*.key
+*firebase*.json

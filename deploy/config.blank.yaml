@@ -1,0 +1,64 @@
+server:
+  port:
+  readTimeout:
+  writeTimeout:
+
+database:
+  pool:
+    maxOpenConns:
+    maxIdleConns:
+    connMaxLifetimeMinutes:
+    connMaxIdleTimeMinutes:
+  admin:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+    sslmode:
+    timezone:
+  sell:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+    sslmode:
+    timezone:
+  erp:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+    sslmode:
+    timezone:
+  device:
+    host:
+    port:
+    user:
+    password:
+    dbname:
+
+redis:
+  host:
+  port:
+  username:
+  password:
+  db:
+  clearOnStart:
+
+jwt:
+  secret:
+  refreshSecret:
+
+mailer:
+  host:
+  username:
+  password:
+  port:
+  from:
+
+bootstrap:
+  adminUsername:
+  adminPassword:

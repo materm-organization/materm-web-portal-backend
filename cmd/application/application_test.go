@@ -13,6 +13,7 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/bootstrap"
 	systemservices "github.com/materm-organization/materm-web-portal-backend/modules/system/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/localize"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
 )
@@ -186,5 +187,45 @@ func TestAllPublicEndpointsAreMounted(t *testing.T) {
 	}
 	for extra := range got {
 		t.Errorf("route %s is mounted but not in the expected list", extra)
+	}
+}
+
+// /metrics is never part of the public application (Q-B10): not without the key, not with it. The metrics
+// listener is a separate app on a separate port (pkg/metrics.NewApp), and what the public app served shows up
+// there by route template.
+func TestMetricsAreNotOnThePublicListener(t *testing.T) {
+	app, _, _ := wire(t, []string{testKey}, true)
+	for _, h := range []map[string]string{nil, {portalkey.Header: testKey}} {
+		if code, _ := req(t, app, "GET", "/metrics", h); code != 404 {
+			t.Errorf("public GET /metrics (key=%v) = %d, want 404", h != nil, code)
+		}
+		if code, _ := req(t, app, "GET", "/api/v1/metrics", h); code == 200 {
+			t.Errorf("public GET /api/v1/metrics (key=%v) must not exist", h != nil)
+		}
+	}
+	if code, _ := req(t, app, "GET", "/health", nil); code != 200 {
+		t.Fatalf("health %d", code)
+	}
+	if code, _ := req(t, app, "GET", "/api/v1/public/site", nil); code != 401 {
+		t.Fatalf("site without key %d", code)
+	}
+
+	mr, err := metrics.NewApp(metrics.Default).Test(httptest.NewRequest("GET", "/metrics", nil), -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(mr.Body)
+	_ = mr.Body.Close()
+	out := string(b)
+	for _, want := range []string{
+		`materm_portal_http_requests_total{method="GET",route="/health",status_class="2xx"}`,
+		`materm_portal_http_requests_total{method="GET",route="/api/v1/public/site",status_class="4xx"}`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("metrics output lacks %s", want)
+		}
+	}
+	if strings.Contains(out, testKey) {
+		t.Error("the portal key must never appear in the metrics")
 	}
 }

@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -34,6 +35,7 @@ type Env struct {
 	Forms     FormsConfig     `mapstructure:"forms"`
 	Preview   PreviewConfig   `mapstructure:"preview"`
 	Site      SiteConfig      `mapstructure:"site"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
 }
 
 // Deployment environments of server.env.
@@ -212,6 +214,18 @@ type PreviewConfig struct {
 	KeyPerMinute   int           `mapstructure:"keyPerMinute"`
 }
 
+// MetricsConfig: the Prometheus endpoint (Q-B10). Port 0 (the default) = off. When set, GET /metrics is served
+// on Bind:Port by a SEPARATE listener (never on server.port): it has no authentication, so keep that port off
+// every public route/ingress (loopback by default; in a container set Bind to 0.0.0.0 and expose the port only
+// to the monitoring network).
+type MetricsConfig struct {
+	Port int    `mapstructure:"port"`
+	Bind string `mapstructure:"bind"`
+}
+
+// Enabled reports whether the metrics listener should start.
+func (m MetricsConfig) Enabled() bool { return m.Port > 0 }
+
 // SiteConfig: DefaultBaseURL is the fallback of the site.base_url setting (canonical URLs).
 type SiteConfig struct {
 	DefaultBaseURL string `mapstructure:"defaultBaseUrl"`
@@ -259,6 +273,7 @@ const (
 	defaultPreviewTTL    = 10 * time.Second
 	defaultPreviewToken  = 60
 	defaultPreviewKey    = 300
+	defaultMetricsBind   = "127.0.0.1"
 
 	defaultRedisDialTimeout = 200 * time.Millisecond
 	defaultRedisIOTimeout   = 300 * time.Millisecond
@@ -307,6 +322,8 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("preview.tokenPerMinute", defaultPreviewToken)
 	v.SetDefault("preview.keyPerMinute", defaultPreviewKey)
 	v.SetDefault("site.defaultBaseUrl", "")
+	v.SetDefault("metrics.port", 0)
+	v.SetDefault("metrics.bind", defaultMetricsBind)
 }
 
 // Defaults fills blank values: pool limits, timeouts and the doc/08 section 2.9 keys. It never invents a
@@ -401,6 +418,10 @@ func (e *Env) Defaults() {
 		e.Preview.KeyPerMinute = defaultPreviewKey
 	}
 	e.Site.DefaultBaseURL = strings.TrimSpace(e.Site.DefaultBaseURL)
+	e.Metrics.Bind = strings.TrimSpace(e.Metrics.Bind)
+	if e.Metrics.Bind == "" {
+		e.Metrics.Bind = defaultMetricsBind
+	}
 }
 
 func trimList(in []string) []string {
@@ -491,6 +512,14 @@ func (e *Env) Validate() (warnings []string, err error) {
 		if u, perr := url.Parse(c); perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			fail("site.defaultBaseUrl: must be an http(s) URL with a host")
 		}
+	}
+	if e.Metrics.Port < 0 || e.Metrics.Port > 65535 {
+		fail("metrics.port: 0 (off) or 1-65535")
+	} else if e.Metrics.Enabled() && e.Metrics.Port == e.Server.Port {
+		fail("metrics.port: must differ from server.port (metrics are never served on the public listener)")
+	}
+	if e.Metrics.Enabled() && net.ParseIP(e.Metrics.Bind) == nil && e.Metrics.Bind != "localhost" {
+		fail("metrics.bind: must be an IP address (or localhost)")
 	}
 	if e.Forms.MaxClockSkew > time.Hour {
 		warn("forms.maxClockSkew: longer than 1h weakens the rendered_at check")

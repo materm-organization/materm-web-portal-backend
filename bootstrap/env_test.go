@@ -63,7 +63,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		for _, p := range []string{"SERVER_", "DATABASE_", "REDIS_", "PORTAL_", "FILE_", "MEDIA_", "CACHE_", "RATELIMIT_", "FORMS_", "PREVIEW_", "SITE_"} {
+		for _, p := range []string{"SERVER_", "DATABASE_", "REDIS_", "PORTAL_", "FILE_", "MEDIA_", "CACHE_", "RATELIMIT_", "FORMS_", "PREVIEW_", "SITE_", "METRICS_"} {
 			if strings.HasPrefix(k, p) {
 				t.Setenv(k, "")
 			}
@@ -374,5 +374,45 @@ func TestValidateInvalidation(t *testing.T) {
 	e.Cache.InvalidateMaxAge = 2 * time.Hour
 	if w, _ := e.Validate(); !hasProblem(w, "invalidateMaxAge") {
 		t.Errorf("max age warning: %v", w)
+	}
+}
+
+func TestMetricsConfig(t *testing.T) {
+	if e := validEnv(); e.Metrics.Enabled() || e.Metrics.Bind != "127.0.0.1" {
+		t.Fatalf("metrics must be off and loopback by default: %+v", e.Metrics)
+	}
+	for name, tc := range map[string]struct {
+		mutate func(*Env)
+		want   string
+	}{
+		"same as public": {func(e *Env) { e.Metrics.Port = e.Server.Port }, "metrics.port: must differ"},
+		"negative":       {func(e *Env) { e.Metrics.Port = -1 }, "metrics.port"},
+		"too big":        {func(e *Env) { e.Metrics.Port = 70000 }, "metrics.port"},
+		"bad bind":       {func(e *Env) { e.Metrics.Port, e.Metrics.Bind = 9100, "not-an-ip" }, "metrics.bind"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := validEnv()
+			tc.mutate(e)
+			if ps := problems(t, e); !hasProblem(ps, tc.want) {
+				t.Errorf("want %q, got %v", tc.want, ps)
+			}
+		})
+	}
+	good := validEnv()
+	good.Metrics.Port, good.Metrics.Bind = 9100, "0.0.0.0"
+	if ps := problems(t, good); len(ps) != 0 {
+		t.Errorf("valid metrics config rejected: %v", ps)
+	}
+
+	// reachable from the environment although the template has no such key
+	clearEnv(t)
+	t.Setenv("METRICS_PORT", "9100")
+	t.Setenv("METRICS_BIND", "10.0.0.5")
+	loaded, err := LoadEnv(writeConfig(t, blankTemplate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Metrics.Port != 9100 || loaded.Metrics.Bind != "10.0.0.5" {
+		t.Errorf("env override: %+v", loaded.Metrics)
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/rediskeys"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/testutil/redistest"
 )
@@ -668,3 +669,26 @@ func TestSubscribersOnOtherChannelsDoNotHearEachOther(t *testing.T) {
 }
 
 func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
+
+// Hit/miss and the invalidation outcomes reach the metrics (cache hit/miss counters, invalidate_events).
+func TestMetricsCountHitMissAndInvalidationOutcomes(t *testing.T) {
+	hit, miss := metrics.CacheCount("hit"), metrics.CacheCount("miss")
+	app, rej, ign := metrics.InvalidationCount("applied"), metrics.InvalidationCount("rejected"), metrics.InvalidationCount("ignored")
+	e := newSub(t, nil)
+	l := &loadCounter{tag: []string{"page:1"}}
+	sp := Spec{Resource: "page", Locale: "en"}
+	get(t, e.c, sp, l) // miss
+	get(t, e.c, sp, l) // hit
+	get(t, e.c, sp, l) // hit
+	if metrics.CacheCount("miss") != miss+1 || metrics.CacheCount("hit") != hit+2 {
+		t.Errorf("hit +%d miss +%d, want +2 / +1", metrics.CacheCount("hit")-hit, metrics.CacheCount("miss")-miss)
+	}
+
+	e.publish(t, e.event("m-ok", "page:1"), subKey)           // applied
+	e.publishRaw(t, []byte("not json"))                       // rejected
+	e.publish(t, e.event("m-ok", "page:1"), subKey)           // replay: rejected
+	e.publish(t, e.event("m-internal", "category:5"), subKey) // internal tag only: ignored
+	eventually(t, "every outcome to be counted", func() bool {
+		return metrics.InvalidationCount("applied") == app+1 && metrics.InvalidationCount("rejected") == rej+2 && metrics.InvalidationCount("ignored") == ign+1
+	})
+}

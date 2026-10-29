@@ -16,6 +16,7 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/pkg/apperror"
 	serviceconstants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/portalkey"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/requestid"
 )
@@ -53,6 +54,8 @@ func NewFiber(cfg ServerConfig) *fiber.App {
 	app := fiber.New(fiberCfg)
 	logs.SetSourceTrace(sourceTraceEnabled(cfg.Env))
 
+	// first, so that it sees the final status: the access log below writes the error answer itself
+	app.Use(metricsMiddleware)
 	app.Use(requestid.New())
 	app.Use(newAccessLog(prettyAccessLog(cfg.Env)))
 	app.Use(recover.New(recover.Config{
@@ -71,6 +74,14 @@ func NewFiber(cfg ServerConfig) *fiber.App {
 	}
 	app.Use(dbQueryTimeoutMiddleware)
 	return app
+}
+
+// metricsMiddleware records count and latency by method, route TEMPLATE and status class (pkg/metrics).
+func metricsMiddleware(c *fiber.Ctx) error {
+	start := time.Now()
+	err := c.Next()
+	metrics.Request(c.Method(), routeTemplate(c), c.Response().StatusCode(), time.Since(start))
+	return err
 }
 
 // corsConfig is the allow-list CORS policy: only the configured origins, read methods, no credentials.

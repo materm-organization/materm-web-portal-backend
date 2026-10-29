@@ -7,14 +7,8 @@ package bootstrap
 // IMPORTANT: every /api/v1 endpoint requires the server-to-server portal key in the X-Portal-Key header
 // (doc/08 section 2.9). The header is documented as a security scheme, its value is never shown.
 
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
-
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @contact.name Materm web team
+// TODO-materm-contact: set the support contact URL/e-mail of the project (@contact.url / @contact.email).
 
 // @BasePath /api/v1
 // @schemes http https

@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/materm-organization/materm-web-portal-backend/pkg/logs"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/metrics"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/redisguard"
 )
 
@@ -340,20 +341,24 @@ func (s *Subscriber) handle(ctx context.Context, msg []byte) {
 	if err != nil {
 		if errors.Is(err, ErrNotInterest) {
 			s.ignored.Add(1)
+			metrics.Invalidation("ignored")
 			return
 		}
 		s.rejected.Add(1)
+		metrics.Invalidation("rejected")
 		logs.WarnEvery("publiccache.reject", time.Minute, "publiccache: invalidation message rejected", logs.String("reason", err.Error()))
 		return
 	}
 	if !s.firstTime(ev.EventID) {
 		s.rejected.Add(1)
+		metrics.Invalidation("rejected")
 		logs.WarnEvery("publiccache.replay", time.Minute, "publiccache: invalidation event seen before, ignored")
 		return
 	}
 	tags, _ := FilterTags(ev.Tags)
 	if len(tags) == 0 {
 		s.ignored.Add(1)
+		metrics.Invalidation("ignored")
 		return
 	}
 	s.tags.Add(int64(len(tags)))
@@ -361,6 +366,7 @@ func (s *Subscriber) handle(ctx context.Context, msg []byte) {
 		logs.Error("publiccache: invalidation failed", logs.Err(err))
 	}
 	s.applied.Add(1)
+	metrics.Invalidation("applied")
 	s.wg.Add(1)
 	go func() { // the second delete
 		defer s.wg.Done()

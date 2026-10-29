@@ -61,6 +61,7 @@ testdb-status:
 # fails (printing key paths, never values) when config.yaml contains a value: it must stay a blank template in git
 check-config:
 	$(ADMIN_REPO)/scripts/check-config-blank.sh $(CONFIG)
+	$(ADMIN_REPO)/scripts/check-config-blank.sh deploy/config.blank.yaml
 
 test-coverage:
 	@$(GOTEST) -coverprofile=coverage.out -coverpkg=github.com/materm-organization/materm-web-portal-backend/modules/... ./... 2>&1 | grep "^ok"

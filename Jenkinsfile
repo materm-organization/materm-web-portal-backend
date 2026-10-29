@@ -180,7 +180,7 @@ node(label: 'master') {
 
     } catch (err) {
         stage('FAILURE: Pipeline Alert') {
-            build job: 'TODO-materm-failure-notification-job' // TODO: set Materm's Jenkins notification job path,
+            build job: 'TODO-materm-failure-notification-job', // TODO: set Materm's Jenkins notification job path (the comma used to sit inside this comment, so `parameters` was never passed)
             parameters: [
                 string(name: 'NAME', value: "\n\nJob:\nContinuous Integration (CI)\n\nService Name: \n${SERVICE_NAME} \n\nVersion: \n${DOCKER_TAG} \n\nDeployer: \n${COMMIT_AUTHOR_NAME} \n\nError: \n${err}\n\n"),
                 string(name: 'STATUS', value: "FAILURE"),
