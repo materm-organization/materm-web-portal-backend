@@ -126,7 +126,7 @@ func TestUnusableTokensAreIndistinguishable(t *testing.T) {
 	revoked := st.issue("revoked", 2, "", snap)
 	st.Tokens.entries[hashHex(revoked)].revoked = true
 	post := makeToken("post")
-	st.Tokens.add(post, previewrepos.Consumed{EntityType: "cms.posts", EntityID: 1, Snapshot: []byte(`{"post":{}}`)}, time.Hour)
+	st.Tokens.add(post, previewrepos.Consumed{EntityType: "cms.albums", EntityID: 1, Snapshot: []byte(`{"album":{}}`)}, time.Hour)
 
 	if r := st.resolve(t, good, ""); !okStatus(r) {
 		t.Fatalf("control: %d %s", r.Status, r.Body)
@@ -487,7 +487,7 @@ func TestTokenNeverReachesTheLog(t *testing.T) {
 	good := st.issue("log-good", 2, "", snapshotOf(t, "our-path"))
 	broken := st.issue("log-broken", 2, "", []byte(`{"page":{"path":"SECRET-PATH-IN-A-BROKEN-SNAPSHOT","name":5}}`))
 	post := makeToken("log-post")
-	st.Tokens.add(post, previewrepos.Consumed{EntityType: "cms.posts", EntityID: 1, Snapshot: []byte(`{}`)}, time.Hour)
+	st.Tokens.add(post, previewrepos.Consumed{EntityType: "cms.albums", EntityID: 1, Snapshot: []byte(`{}`)}, time.Hour)
 	unknown := makeToken("log-unknown")
 
 	st.resolve(t, good, "?token="+good+"&path=/our-path")

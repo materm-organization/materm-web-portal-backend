@@ -224,17 +224,13 @@ func (s *blogService) resolvePost(ctx context.Context, locale, slug string) (*mo
 	return &models.PostOutcome{Kind: models.KindRedirect, Location: readkit.PostHref(target.Slug)}, tags, nil
 }
 
-// detail builds the flat post page and the cache tags it depends on.
+// detail builds the flat post page and the cache tags it depends on. It READS the pieces from the views
+// (links, tags, gallery, the canonical slug of the default locale) and hands them to compose, which is also what
+// a post preview calls with the same pieces taken from a frozen snapshot (Composer).
 func (s *blogService) detail(ctx context.Context, locale string, p *entities.PublishedPost) (*models.PostDetail, []string, error) {
-	formats, err := s.dateFormats(ctx, locale)
-	if err != nil {
-		return nil, nil, err
-	}
 	tags := []string{"post:" + strconv.FormatInt(p.PostID, 10), "posts:list", "locales", "settings"}
 
 	// body: links to pages and posts are resolved on the server; images join the media map
-	var body map[string]any
-	var bodyMedia []int64
 	doc := readkit.DecodeJSON(p.Body.Bytes())
 	links, err := readkit.ResolveLinks(ctx, s.d.Content, locale, doc)
 	if err != nil {
@@ -243,31 +239,11 @@ func (s *blogService) detail(ctx context.Context, locale string, p *entities.Pub
 	if links.UsedPages {
 		tags = append(tags, "pages")
 	}
-	if len(p.Body) > 0 {
-		res := richtext.ResolveJSON(p.Body.Bytes(), richtext.Full, links.MapResolver)
-		body, bodyMedia = res.Doc, res.MediaIDs
-	}
-
 	tagRows, err := s.d.Content.Posts.Tags(ctx, locale, []int64{p.PostID})
 	if err != nil {
 		return nil, nil, err
 	}
-	postTags := make([]models.TagInfo, 0, len(tagRows))
-	for _, t := range tagRows {
-		postTags = append(postTags, models.TagInfo{Key: t.Key, Name: t.Name, Slug: t.Slug})
-	}
 	mediaRows, err := s.d.Content.Posts.Media(ctx, locale, p.PostID)
-	if err != nil {
-		return nil, nil, err
-	}
-	gallery := models.Gallery{Heading: p.GalleryHeading, Description: p.GalleryDescription, Items: make([]models.GalleryItem, 0, len(mediaRows))}
-	ids := append([]int64{}, bodyMedia...)
-	for _, m := range mediaRows {
-		gallery.Items = append(gallery.Items, models.GalleryItem{MediaID: m.MediaID, Alt: m.Alt, Caption: m.Caption})
-		ids = append(ids, m.MediaID)
-	}
-
-	site, err := s.siteSettings(ctx, locale)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -277,6 +253,76 @@ func (s *blogService) detail(ctx context.Context, locale string, p *entities.Pub
 			canonicalSlug = def.Slug
 		}
 	}
+	d, err := s.compose(ctx, locale, DetailParts{
+		Post: p, Links: links.MapResolver, Tags: tagRows, Media: mediaRows, CanonicalSlug: canonicalSlug,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return d, tags, nil
+}
+
+// DetailParts is everything the flat post page is built from, already read by the caller: the public path reads
+// it from the views of a published post, the preview from a frozen snapshot (doc/08 section 2.4: ONE builder).
+type DetailParts struct {
+	// Post is the row of v_published_posts (body, gallery texts, SEO fields included).
+	Post *entities.PublishedPost
+	// Links resolves the page / post links of the body (published targets only).
+	Links richtext.MapResolver
+	Tags  []entities.PublishedPostTag
+	Media []entities.PublishedPostMedia
+	// CanonicalSlug is the slug of the default locale (the canonical URL is on it).
+	CanonicalSlug string
+	// Noindex marks the answer `seo.noindex` (a preview is never indexed). The public path leaves it false.
+	Noindex bool
+}
+
+// Composer builds the P-08 body from DetailParts. It is the one implementation of the post page, shared by P-08
+// and P-19 (post preview).
+type Composer struct{ s *blogService }
+
+// NewComposer builds the Composer over the same dependencies as the blog service.
+func NewComposer(d Deps) *Composer { return &Composer{s: &blogService{d: d}} }
+
+// Compose builds the flat post page of the given locale.
+func (c *Composer) Compose(ctx context.Context, locale string, in DetailParts) (*models.PostDetail, error) {
+	return c.s.compose(ctx, locale, in)
+}
+
+// DateFormats reads date_formats of the locale (for the card date of a preview).
+func (c *Composer) DateFormats(ctx context.Context, locale string) (readkit.DateFormats, error) {
+	return c.s.dateFormats(ctx, locale)
+}
+
+func (s *blogService) compose(ctx context.Context, locale string, in DetailParts) (*models.PostDetail, error) {
+	p := in.Post
+	formats, err := s.dateFormats(ctx, locale)
+	if err != nil {
+		return nil, err
+	}
+
+	var body map[string]any
+	var bodyMedia []int64
+	if len(p.Body) > 0 {
+		res := richtext.ResolveJSON(p.Body.Bytes(), richtext.Full, in.Links)
+		body, bodyMedia = res.Doc, res.MediaIDs
+	}
+
+	postTags := make([]models.TagInfo, 0, len(in.Tags))
+	for _, t := range in.Tags {
+		postTags = append(postTags, models.TagInfo{Key: t.Key, Name: t.Name, Slug: t.Slug})
+	}
+	gallery := models.Gallery{Heading: p.GalleryHeading, Description: p.GalleryDescription, Items: make([]models.GalleryItem, 0, len(in.Media))}
+	ids := append([]int64{}, bodyMedia...)
+	for _, m := range in.Media {
+		gallery.Items = append(gallery.Items, models.GalleryItem{MediaID: m.MediaID, Alt: m.Alt, Caption: m.Caption})
+		ids = append(ids, m.MediaID)
+	}
+
+	site, err := s.siteSettings(ctx, locale)
+	if err != nil {
+		return nil, err
+	}
 
 	d := &models.PostDetail{
 		PostItem:  ItemFromCard(p.PublishedPostCard, formats),
@@ -284,9 +330,10 @@ func (s *blogService) detail(ctx context.Context, locale string, p *entities.Pub
 		Body:      body,
 		Gallery:   gallery,
 		Tags:      postTags,
-		SEO:       s.seo(p, site, canonicalSlug),
+		SEO:       s.seo(p, site, in.CanonicalSlug),
 		UpdatedAt: readkit.ISO(p.UpdatedAt),
 	}
+	d.SEO.Noindex = in.Noindex
 	if p.HeroMediaID != nil {
 		d.Hero = &models.ImageRef{MediaID: *p.HeroMediaID, Alt: p.HeroAlt}
 		ids = append(ids, *p.HeroMediaID)
@@ -298,9 +345,9 @@ func (s *blogService) detail(ctx context.Context, locale string, p *entities.Pub
 		ids = append(ids, d.SEO.OGImage.MediaID)
 	}
 	if d.Media, err = s.d.Media.Resolve(ctx, s.d.Lookup, locale, ids); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return d, tags, nil
+	return d, nil
 }
 
 // siteSettings holds the settings a post page needs.

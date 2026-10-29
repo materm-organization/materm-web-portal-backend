@@ -184,7 +184,7 @@ func TestDBUnusableTokensAreIndistinguishable(t *testing.T) {
 	if _, err := e.s.Owner.Exec(`update cms_preview_tokens set revoked_at = now() where id = $1`, revokedID); err != nil {
 		t.Fatal(err)
 	}
-	post, _ := e.issueSnapshot(t, "db-post", "cms.posts", 1, "", time.Hour, `{"post":{}}`)
+	post, _ := e.issueSnapshot(t, "db-post", "cms.albums", 1, "", time.Hour, `{"album":{}}`)
 
 	if r := st.resolve(t, good, ""); r.Status != 200 {
 		t.Fatalf("control: %d %s", r.Status, r.Body)

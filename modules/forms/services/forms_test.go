@@ -304,6 +304,38 @@ func TestMinFillZeroIsARealValue(t *testing.T) {
 	}
 }
 
+// The body the portal FRONTEND's server action sends (materm-web-portal-frontend src/lib/forms/submit.ts): a millisecond
+// `rendered_at` from Date.toISOString(), the elapsed time derived from the signed render stamp, an empty honeypot, no
+// `consent`. A real visitor's message must not be scored as spam by the way the stamp is written (the visitor would
+// see "success" and the message would be stored as spam without anybody noticing).
+func TestTheFrontendsRequestIsNotSpam(t *testing.T) {
+	r := newRig(t)
+	renderedAt := r.now.Add(-4346 * time.Millisecond).Format("2006-01-02T15:04:05.000Z07:00")
+	body := `{"locale":"en","source_path":"/contact","data":{"name":"Noy Vong","email":"noy.visitor@example.org","phone":"","topic":"booking",` +
+		`"message":"Hello, we would like to book two nights in April."},"honeypot":"","elapsed_ms":4346,"rendered_at":"` + renderedAt + `"}`
+	var req models.SubmissionRequest
+	dec := json.NewDecoder(strings.NewReader(body))
+	dec.DisallowUnknownFields() // as the controller decodes it
+	if err := dec.Decode(&req); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.svc.Submit(context.Background(), input(req)); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.sub.subs[0].SpamScore; got != 0 {
+		t.Errorf("the frontend's request scored %d, want 0", got)
+	}
+	// the same request with the stamp the frontend sends for a missing / forged render stamp IS a bot (elapsed_ms 0, no rendered_at)
+	r2 := newRig(t)
+	req.ElapsedMS, req.RenderedAt = nil, ""
+	if err := r2.svc.Submit(context.Background(), input(req)); err != nil {
+		t.Fatal(err)
+	}
+	if got := r2.sub.subs[0].SpamScore; got != ScoreTooFast {
+		t.Errorf("no verified fill time scored %d, want %d", got, ScoreTooFast)
+	}
+}
+
 func TestScore(t *testing.T) {
 	now := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 	future := now.Add(11 * time.Minute)

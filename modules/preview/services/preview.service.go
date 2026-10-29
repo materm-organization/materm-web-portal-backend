@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -24,8 +25,8 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/pkg/rediskeys"
 )
 
-// EntityPages is the entity_type of a page revision. Every other type is answered like an unusable token
-// until its adapter exists (posts: M5).
+// EntityPages is the entity_type of a page revision. A type without an adapter (everything but pages and, when
+// Deps.Posts is set, posts: doc/05 PT-18 allows no other) is answered like an unusable token.
 const EntityPages = "cms.pages"
 
 // InvalidToken is the ONE answer for a token that cannot be used: unknown, expired, revoked, used up, bound
@@ -89,6 +90,8 @@ type Deps struct {
 	Tokens    repositories.TokenRepository
 	Assembler *assemble.Assembler
 	Chains    readkit.ChainSource
+	// Posts renders `cms.posts` snapshots (P-08 body). Nil = post tokens are answered like unusable ones.
+	Posts PostRenderer
 	// Redis holds the snapshot cache; nil = no cache (every call consumes the token).
 	Redis redis.Cmdable
 	// Limiter may be nil (no limit). A limiter that fails lets the call through: this is a read that needs a
@@ -128,12 +131,20 @@ func (s *previewService) Resolve(ctx context.Context, in Input) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
-	if tok.EntityType != EntityPages {
-		// TODO(M5): cms.posts. Logged by type only (never the token).
-		logs.WarnEvery("preview.entity."+tok.EntityType, time.Minute, "preview: entity type has no adapter yet",
+	switch {
+	case tok.EntityType == EntityPages:
+		return s.resolvePage(ctx, in, tok)
+	case tok.EntityType == EntityPosts && s.d.Posts != nil:
+		return s.resolvePost(ctx, in, tok)
+	default:
+		// Logged by type only (never the token).
+		logs.WarnEvery("preview.entity."+tok.EntityType, time.Minute, "preview: entity type has no adapter",
 			logs.String("entity_type", tok.EntityType))
 		return nil, InvalidToken()
 	}
+}
+
+func (s *previewService) resolvePage(ctx context.Context, in Input, tok *repositories.Consumed) (*Result, error) {
 	raw, err := assemble.ParsePageSnapshot(tok.Snapshot)
 	if err != nil {
 		return nil, apperror.Internal(err)
@@ -161,8 +172,46 @@ func (s *previewService) Resolve(ctx context.Context, in Input) (*Result, error)
 	}, nil
 }
 
-// negotiate: an explicit ?locale wins, then the locale the link was issued for, then Accept-Language, then the
-// default.
+// postPathPrefix is the site path of a post (readkit.BlogPath + "/").
+const postPathPrefix = readkit.BlogPath + "/"
+
+func (s *previewService) resolvePost(ctx context.Context, in Input, tok *repositories.Consumed) (*Result, error) {
+	raw, err := assemble.ParsePostSnapshot(tok.Snapshot)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+	// ?path must be /blog/<slug> of some language of THIS post: the admin issues the link with the slug of the
+	// language it was issued for, and the editor may switch language afterwards (the cookie keeps the path).
+	if in.Path != "" {
+		slug, ok := strings.CutPrefix(in.Path, postPathPrefix)
+		if !ok || !raw.HasSlug(slug) {
+			return nil, InvalidToken() // the token is for another post
+		}
+	}
+
+	neg, err := s.negotiate(ctx, in, tok.LocaleCode)
+	if err != nil {
+		return nil, err
+	}
+	chain, err := s.d.Chains.Chain(ctx)
+	if err != nil {
+		return nil, apperror.ServiceUnavailable(err, 0)
+	}
+	res, err := s.d.Posts.Render(ctx, raw, PostOptions{
+		EntityID: tok.EntityID, Locale: neg.Code, Chain: neg.Chain, DefaultLocale: chain.Default(), Now: s.o.Now(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		Neg: neg,
+		Data: &models.PreviewData{
+			Locale: neg.Code, Kind: models.KindPost, Post: res.Detail,
+			Preview: models.Info{EntityType: tok.EntityType, EntityID: tok.EntityID, Locale: neg.Code, Warnings: res.Warnings},
+		},
+	}, nil
+}
+
 func (s *previewService) negotiate(ctx context.Context, in Input, tokenLocale *string) (localize.Negotiation, error) {
 	chain, err := s.d.Chains.Chain(ctx)
 	if err != nil {

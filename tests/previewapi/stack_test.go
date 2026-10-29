@@ -18,6 +18,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	blogservices "github.com/materm-organization/materm-web-portal-backend/modules/blog/services"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/repositories"
 	previewcontroller "github.com/materm-organization/materm-web-portal-backend/modules/preview/controller"
@@ -190,7 +191,10 @@ func (st *stack) build(t testing.TB, set *repositories.Set, cfg opts) *stack {
 		Shared: cfg.shared,
 	}
 	st.Public, st.Set, st.Provider = assemble.New(deps), set, locales
+	lookup := repositories.NewMediaLookup(set.Assets)
+	composer := blogservices.NewComposer(blogservices.Deps{Content: set, Media: media.NewBuilder(media.Config{}), Lookup: lookup, Locales: locales})
 	d := previewservices.Deps{
+		Posts:  previewservices.NewPostRenderer(previewservices.PostSources{Set: set, Composer: composer}),
 		Tokens: cfg.tokens, Assembler: assemble.New(deps), Chains: locales, Limiter: cfg.limiter, Keys: cfg.keys, Redis: cfg.redis,
 	}
 	if cfg.svc != nil {

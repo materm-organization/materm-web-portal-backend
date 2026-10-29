@@ -2,6 +2,7 @@ package assemble
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +68,44 @@ func TestRemapSectionPath(t *testing.T) {
 	} {
 		if got := remapSectionPath(in, orig); got != want {
 			t.Errorf("%s -> %s, want %s", in, got, want)
+		}
+	}
+}
+
+func TestParsePostSnapshot(t *testing.T) {
+	good := `{"post":{"category_id":1,"published_at":"2026-09-05T00:00:00Z"},"translations":[` +
+		`{"locale_code":"la","slug":"a-la","title":"A"},{"locale_code":"en","slug":"a-en","title":"A","is_enabled":false}],` +
+		`"tag_ids":[3],"media":[{"id":9,"media_id":2,"sort_order":2},{"id":8,"media_id":1,"sort_order":1}]}`
+	r, err := ParsePostSnapshot([]byte(good))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Post.CategoryID == nil || *r.Post.CategoryID != 1 || r.Post.PublishedAt == nil || len(r.TagIDs) != 1 {
+		t.Errorf("decoded: %+v", r)
+	}
+	if r.Media[0].ID != 8 {
+		t.Errorf("gallery must be ordered by sort_order: %+v", r.Media)
+	}
+	if !r.HasSlug("a-en") || !r.HasSlug("a-la") || r.HasSlug("") || r.HasSlug("a") {
+		t.Error("HasSlug")
+	}
+	// the first ENABLED translation in chain order; a disabled one is skipped
+	if i, tr := r.PickTranslation([]string{"en", "la"}); tr == nil || i != 0 || tr.LocaleCode != "la" {
+		t.Errorf("pick: %d %+v", i, tr)
+	}
+	if _, tr := r.PickTranslation([]string{"en"}); tr != nil {
+		t.Error("a disabled translation must not be picked")
+	}
+
+	for name, bad := range map[string]string{
+		"not json": `SECRET{`, "no slug": `{"translations":[{"locale_code":"en","slug":" ","title":"SECRET"}]}`,
+		"wrong type": `{"post":{"category_id":"SECRET"}}`, "empty": `{}`,
+	} {
+		_, err := ParsePostSnapshot([]byte(bad))
+		if !errors.Is(err, ErrBadSnapshot) {
+			t.Errorf("%s: %v", name, err)
+		} else if strings.Contains(err.Error(), "SECRET") {
+			t.Errorf("%s: the error quotes the snapshot: %v", name, err)
 		}
 	}
 }

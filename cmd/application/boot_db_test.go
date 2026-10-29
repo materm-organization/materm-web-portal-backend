@@ -186,6 +186,23 @@ func TestBootServesTheSeventeenEndpoints(t *testing.T) {
 	if status, body := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve?path=/elsewhere", pv); status != 401 || body["code"] != "INVALID_TOKEN" {
 		t.Errorf("P-19 wrong path: %d %v", status, body)
 	}
+	// P-19 for a post (M5): proves that Setup wires the post renderer, not only the page assembler
+	const postToken = "boot-test-post-preview-token-0123456789ABCDEF"
+	postHash := sha256.Sum256([]byte(postToken))
+	var postRev int64
+	if err = s.Owner.QueryRowContext(context.Background(), `insert into cms_content_revisions (entity_type, entity_id, version, kind, snapshot, change_note)
+		values ('cms.posts', 987655, 1, 'history', '{"post":{},"translations":[{"locale_code":"en","slug":"boot-post","title":"Boot post"}],"tag_ids":[],"media":[]}'::jsonb, 'preview')
+		returning id`).Scan(&postRev); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Owner.ExecContext(context.Background(), `insert into cms_preview_tokens (token_hash, revision_id, locale_code, expires_at) values ($1, $2, 'en', now() + interval '10 minutes')`, postHash[:], postRev); err != nil {
+		t.Fatal(err)
+	}
+	pvPost := map[string]string{portalkey.Header: testKey, "X-Preview-Token": postToken}
+	if status, body := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve?path=/blog/boot-post", pvPost); status != 200 ||
+		body["data"].(map[string]any)["kind"] != "post" || body["data"].(map[string]any)["post"].(map[string]any)["title"] != "Boot post" {
+		t.Errorf("P-19 post: %d %v", status, body)
+	}
 	if status, _ := req(t, rt.Fiber, "GET", "/api/v1/preview/resolve", map[string]string{portalkey.Header: testKey, "X-Preview-Token": "boot-test-unknown-token-0123456789ABCDEFGHIJKL"}); status != 401 {
 		t.Errorf("P-19 unknown token: %d", status)
 	}

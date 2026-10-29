@@ -67,6 +67,10 @@ func SetupServices(repos *Repositories, env *bootstrap.Env) *Services {
 		Media:  repos.Media, MediaLookup: lookup, DefaultBaseURL: baseURL,
 	})
 
+	blogDeps := blogservices.Deps{
+		Content: content, Media: repos.Media, Lookup: lookup, Cache: cache, Locales: locales, DefaultBaseURL: baseURL,
+	}
+
 	return &Services{
 		Locales:     locales,
 		Media:       repos.Media,
@@ -85,15 +89,15 @@ func SetupServices(repos *Repositories, env *bootstrap.Env) *Services {
 		SEO: seoservices.NewSEOService(seoservices.Deps{
 			SEO: content.SEO, Settings: content.Settings, Cache: cache, DefaultBaseURL: baseURL,
 		}),
-		Blog: blogservices.NewBlogService(blogservices.Deps{
-			Content: content, Media: repos.Media, Lookup: lookup, Cache: cache, Locales: locales, DefaultBaseURL: baseURL,
-		}),
+		Blog: blogservices.NewBlogService(blogDeps),
 		Gallery: galleryservices.NewGalleryService(galleryservices.Deps{
 			Content: content, Media: repos.Media, Lookup: lookup, Cache: cache,
 		}),
 		Faq: faqservices.NewFaqService(faqservices.Deps{Content: content, Cache: cache}),
 		Preview: previewservices.NewPreviewService(previewservices.Deps{
 			Tokens: repos.PreviewTokens, Assembler: assembler, Chains: locales, Redis: rc,
+			// posts (PT-18): the same page builder as P-08, fed from the snapshot
+			Posts:   previewservices.NewPostRenderer(previewservices.PostSources{Set: content, Composer: blogservices.NewComposer(blogDeps)}),
 			Limiter: ratelimit.NewRedis(repos.Redis), Keys: keys,
 			Options: previewservices.Options{
 				CacheTTL: env.Preview.CacheTTL, TokenPerMinute: env.Preview.TokenPerMinute, KeyPerMinute: env.Preview.KeyPerMinute,
