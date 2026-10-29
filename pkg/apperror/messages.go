@@ -59,6 +59,7 @@ var messagesEN = map[string]string{
 	CodeValidationFailed:      "The submitted data is not valid.",
 	CodeIdempotencyKeyReused:  "This idempotency key was already used with different data.",
 	CodeExportTooLarge:        "The export is too large. Narrow the filter.",
+	CodePublishBlocked:        "Cannot publish: some items must be fixed first.",
 	CodePreconditionRequired:  "This request must include an If-Match header.",
 	CodeRateLimited:           "Too many requests. Please try again later.",
 	CodeInternal:              "An internal error occurred.",

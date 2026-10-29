@@ -57,6 +57,7 @@ const (
 	CodeValidationFailed      = "VALIDATION_FAILED"          // 422
 	CodeIdempotencyKeyReused  = "IDEMPOTENCY_KEY_REUSED"     // 422
 	CodeExportTooLarge        = "EXPORT_TOO_LARGE"           // 422
+	CodePublishBlocked        = "PUBLISH_BLOCKED"            // 422 (a publish the rules refuse: errors[] lists the blockers, details the counts)
 	CodePreconditionRequired  = "PRECONDITION_REQUIRED"      // 428
 	CodeRateLimited           = "RATE_LIMITED"               // 429
 	CodeInternal              = "INTERNAL_ERROR"             // 500
@@ -128,6 +129,13 @@ func (e *Error) Is(target error) bool {
 func (e *Error) WithDetails(d map[string]any) *Error {
 	c := *e
 	c.Details = d
+	return &c
+}
+
+// WithMessage returns a copy of e with a message that replaces the catalog text (not translated).
+func (e *Error) WithMessage(m string) *Error {
+	c := *e
+	c.Message = m
 	return &c
 }
 
@@ -270,6 +278,10 @@ func IdempotencyKeyReused() *Error {
 
 // ExportTooLarge: more rows than an export may carry.
 func ExportTooLarge() *Error { return newErr(http.StatusUnprocessableEntity, CodeExportTooLarge) }
+
+// PublishBlocked: a publish that the publish rules refuse. The caller adds errors[] (the blockers) and details; the
+// message may be replaced with WithMessage (e.g. to count the blockers).
+func PublishBlocked() *Error { return newErr(http.StatusUnprocessableEntity, CodePublishBlocked) }
 
 // PreconditionRequired: the endpoint requires If-Match.
 func PreconditionRequired() *Error {

@@ -94,7 +94,7 @@ func TestEveryCodeHasAMessage(t *testing.T) {
 		CodeSessionRevoked, CodeRefreshReused, CodeAuthzChanged, CodeRefreshReplayGone, CodeDefaultLocaleProtect, CodeForbidden, CodePasswordChangeNeeded, CodeSuperAdminProtected, CodeNotFound,
 		CodeMethodNotAllowed, CodeConflictDuplicate, CodeConflictLockVersion, CodeLastSuperAdmin, CodeRoleInUse, CodeSystemRoleProtected,
 		CodeSelfActionNotAllowed, CodeInvalidState, CodeEntityReferenced, CodeIdempotencyInProgress, CodePayloadTooLarge, CodeUnsupportedMediaType,
-		CodeValidationFailed, CodeIdempotencyKeyReused, CodeExportTooLarge, CodePreconditionRequired, CodeRateLimited, CodeInternal, CodeServiceUnavailable}
+		CodeValidationFailed, CodeIdempotencyKeyReused, CodeExportTooLarge, CodePublishBlocked, CodePreconditionRequired, CodeRateLimited, CodeInternal, CodeServiceUnavailable}
 	for _, c := range codes {
 		if m := Message(c, LangEN); m == c || m == "" {
 			t.Errorf("code %s has no English message", c)
@@ -122,7 +122,7 @@ func TestConstructorsStatusAndCode(t *testing.T) {
 		{LastSuperAdmin(), 409, "LAST_SUPER_ADMIN"}, {RoleInUse(1), 409, "ROLE_IN_USE"}, {SystemRoleProtected(), 409, "SYSTEM_ROLE_PROTECTED"},
 		{SelfActionNotAllowed(), 409, "SELF_ACTION_NOT_ALLOWED"}, {InvalidState(), 409, "INVALID_STATE"}, {EntityReferenced(), 409, "ENTITY_REFERENCED"},
 		{IdempotencyInProgress(), 409, "IDEMPOTENCY_IN_PROGRESS"}, {PayloadTooLarge(), 413, "PAYLOAD_TOO_LARGE"}, {UnsupportedMediaType(), 415, "UNSUPPORTED_MEDIA_TYPE"},
-		{Validation(), 422, "VALIDATION_FAILED"}, {IdempotencyKeyReused(), 422, "IDEMPOTENCY_KEY_REUSED"}, {ExportTooLarge(), 422, "EXPORT_TOO_LARGE"},
+		{Validation(), 422, "VALIDATION_FAILED"}, {IdempotencyKeyReused(), 422, "IDEMPOTENCY_KEY_REUSED"}, {ExportTooLarge(), 422, "EXPORT_TOO_LARGE"}, {PublishBlocked(), 422, "PUBLISH_BLOCKED"},
 		{PreconditionRequired(), 428, "PRECONDITION_REQUIRED"}, {RateLimited(0), 429, "RATE_LIMITED"}, {Internal(nil), 500, "INTERNAL_ERROR"},
 		{ServiceUnavailable(nil, 0), 503, "SERVICE_UNAVAILABLE"},
 	}
