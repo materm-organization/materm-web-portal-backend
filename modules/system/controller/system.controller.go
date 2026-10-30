@@ -29,6 +29,14 @@ type probeData struct {
 
 // Health is the liveness probe: 200 while the process answers. It touches no dependency and says nothing
 // about the host or the version.
+//
+// @Summary Liveness probe
+// @Description 200 while the process answers. Touches no dependency. No credential. Also mounted at /healthz.
+// @Tags System
+// @Produce json
+// @Success 200 {object} response.Envelope{data=probeData} "status ok"
+// @Router /health [get]
+// @Router /healthz [get]
 func (h *systemCtrl) Health(c *fiber.Ctx) error {
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return response.OK(c, probeData{Status: models.StatusOK})
@@ -37,6 +45,15 @@ func (h *systemCtrl) Health(c *fiber.Ctx) error {
 // Ready is the readiness probe. 200 {status: ok|degraded} when the database answers (degraded = Redis is down:
 // reads fall back to the database), 503 {status: down} when it does not. The body never names a dependency or carries an error: the probe needs no credential, so it
 // must not tell an attacker what the stack is made of.
+//
+// @Summary Readiness probe
+// @Description 200 with status ok or degraded (Redis down, reads fall back to the database); 503 with status down when the database does not answer. No credential, never names a dependency. Also mounted at /readyz.
+// @Tags System
+// @Produce json
+// @Success 200 {object} response.Envelope{data=probeData} "status ok or degraded"
+// @Failure 503 {object} apperror.Body "status down (data.status = down)"
+// @Router /ready [get]
+// @Router /readyz [get]
 func (h *systemCtrl) Ready(c *fiber.Ctx) error {
 	r := h.svc.Readiness(c.UserContext())
 	c.Set(fiber.HeaderCacheControl, "no-store")

@@ -32,6 +32,26 @@ func NewBlogCtrl(svc services.BlogService, locales *localize.Provider) BlogCtrl 
 }
 
 // Posts is P-07: GET /public/posts?category&tag&page&limit.
+//
+// @Summary List blog posts (P-07)
+// @Description Published posts, newest first, with the media map next to the list.
+// @Tags Blog
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param category query string false "Category key (^[a-z0-9_-]+$, max 40)"
+// @Param tag query string false "Tag key"
+// @Param page query integer false "Page number, 1..MaxPage (default 1)"
+// @Param limit query integer false "Page size (default and bounds in the blog service)"
+// @Param locale query string false "Content locale (^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$, lo = la). Absent: Accept-Language, then the default locale"
+// @Param Accept-Language header string false "Used when locale is absent"
+// @Param If-None-Match header string false "Weak ETag of an earlier answer; a match gives 304 without a body"
+// @Success 200 {object} models.PostsEnvelope "OK (ETag and Cache-Control set; Content-Language when the locale was negotiated)"
+// @Success 304 "Not modified: If-None-Match matched, no body"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key"
+// @Failure 422 {object} apperror.Body "Invalid parameter (errors[] names it)"
+// @Failure 503 {object} apperror.Body "Database unavailable"
+// @Router /api/v1/public/posts [get]
 func (h *blogCtrl) Posts(c *fiber.Ctx) error {
 	neg, _, err := readkit.Negotiate(c, h.locales)
 	if err != nil {
@@ -49,6 +69,25 @@ func (h *blogCtrl) Posts(c *fiber.Ctx) error {
 }
 
 // Post is P-08: GET /public/posts/:slug. A slug of another locale answers 308 to the visitor's slug.
+//
+// @Summary Post by slug (P-08)
+// @Description A published post. A slug of another locale answers 308 with Location: /blog/<slug> and {data:{redirect:{location,status}}}. Not-found answers are cached 60 s by the backend.
+// @Tags Blog
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param slug path string true "Post slug in the negotiated locale"
+// @Param locale query string false "Content locale (^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$, lo = la). Absent: Accept-Language, then the default locale"
+// @Param Accept-Language header string false "Used when locale is absent"
+// @Param If-None-Match header string false "Weak ETag of an earlier answer; a match gives 304 without a body"
+// @Success 200 {object} response.Envelope{data=models.PostDetail} "OK (ETag and Cache-Control set; Content-Language when the locale was negotiated)"
+// @Success 304 "Not modified: If-None-Match matched, no body"
+// @Success 308 {object} response.Envelope{data=readkit.RedirectBody} "Permanent redirect to the visitor-locale slug (Location header)"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key"
+// @Failure 422 {object} apperror.Body "Invalid parameter (errors[] names it)"
+// @Failure 404 {object} apperror.Body "Not found (cacheable for 30 s)"
+// @Failure 503 {object} apperror.Body "Database unavailable"
+// @Router /api/v1/public/posts/{slug} [get]
 func (h *blogCtrl) Post(c *fiber.Ctx) error {
 	neg, _, err := readkit.Negotiate(c, h.locales)
 	if err != nil {
@@ -68,6 +107,22 @@ func (h *blogCtrl) Post(c *fiber.Ctx) error {
 }
 
 // Categories is P-09.
+//
+// @Summary Post categories (P-09)
+// @Description Categories that have published posts.
+// @Tags Blog
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param locale query string false "Content locale (^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$, lo = la). Absent: Accept-Language, then the default locale"
+// @Param Accept-Language header string false "Used when locale is absent"
+// @Param If-None-Match header string false "Weak ETag of an earlier answer; a match gives 304 without a body"
+// @Success 200 {object} response.Envelope{data=[]models.CategoryInfo} "OK (ETag and Cache-Control set; Content-Language when the locale was negotiated)"
+// @Success 304 "Not modified: If-None-Match matched, no body"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key"
+// @Failure 422 {object} apperror.Body "Invalid parameter (errors[] names it)"
+// @Failure 503 {object} apperror.Body "Database unavailable"
+// @Router /api/v1/public/categories [get]
 func (h *blogCtrl) Categories(c *fiber.Ctx) error {
 	neg, _, err := readkit.Negotiate(c, h.locales)
 	if err != nil {
@@ -81,6 +136,22 @@ func (h *blogCtrl) Categories(c *fiber.Ctx) error {
 }
 
 // Tags is P-10.
+//
+// @Summary Post tags (P-10)
+// @Description Tags that have published posts.
+// @Tags Blog
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param locale query string false "Content locale (^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$, lo = la). Absent: Accept-Language, then the default locale"
+// @Param Accept-Language header string false "Used when locale is absent"
+// @Param If-None-Match header string false "Weak ETag of an earlier answer; a match gives 304 without a body"
+// @Success 200 {object} response.Envelope{data=[]models.TagInfo} "OK (ETag and Cache-Control set; Content-Language when the locale was negotiated)"
+// @Success 304 "Not modified: If-None-Match matched, no body"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key"
+// @Failure 422 {object} apperror.Body "Invalid parameter (errors[] names it)"
+// @Failure 503 {object} apperror.Body "Database unavailable"
+// @Router /api/v1/public/tags [get]
 func (h *blogCtrl) Tags(c *fiber.Ctx) error {
 	neg, _, err := readkit.Negotiate(c, h.locales)
 	if err != nil {

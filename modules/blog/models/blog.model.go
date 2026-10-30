@@ -124,3 +124,12 @@ type PostOutcome struct {
 	Post     *PostDetail `json:"post,omitempty"`
 	Location string      `json:"location,omitempty"`
 }
+
+// PostsEnvelope documents the body of P-07 for swagger (swag cannot instantiate readkit.MediaList[T]); the
+// handler writes readkit.MediaList[PostItem], which has the same JSON shape.
+type PostsEnvelope struct {
+	Success bool            `json:"success"`
+	Data    []PostItem      `json:"data"`
+	Meta    pagination.Meta `json:"meta"`
+	Media   media.Map       `json:"media"`
+}

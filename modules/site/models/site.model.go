@@ -16,7 +16,7 @@ type Settings = assemble.Settings
 // SettingsData is `data` of P-02.
 type SettingsData struct {
 	Locale   string    `json:"locale"`
-	Settings Settings  `json:"settings"`
+	Settings Settings  `json:"settings" swaggertype:"object"`
 	Media    media.Map `json:"media"`
 }
 
@@ -62,7 +62,7 @@ type SiteMenus struct {
 type SiteData struct {
 	Locale   string            `json:"locale"`
 	Locales  []LocaleInfo      `json:"locales"`
-	Settings Settings          `json:"settings"`
+	Settings Settings          `json:"settings" swaggertype:"object"`
 	Menus    SiteMenus         `json:"menus"`
 	UI       map[string]string `json:"ui"`
 	Media    media.Map         `json:"media"`

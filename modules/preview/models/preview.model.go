@@ -2,7 +2,7 @@
 package models
 
 import (
-	blogmodels "github.com/materm-organization/materm-web-portal-backend/modules/blog/models"
+	"github.com/materm-organization/materm-web-portal-backend/modules/blog/models"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/assemble"
 )
 
@@ -17,11 +17,11 @@ const (
 // object P-06 answers as `data` (locale, page, sections, media); Post the same flat object P-08 answers as `data`
 // (the post's fields directly, `media` included); both are built from the frozen snapshot.
 type PreviewData struct {
-	Locale  string                 `json:"locale"`
-	Kind    string                 `json:"kind"`
-	Page    *assemble.PageData     `json:"page,omitempty"`
-	Post    *blogmodels.PostDetail `json:"post,omitempty"`
-	Preview Info                   `json:"preview"`
+	Locale  string             `json:"locale"`
+	Kind    string             `json:"kind"`
+	Page    *assemble.PageData `json:"page,omitempty"`
+	Post    *models.PostDetail `json:"post,omitempty"`
+	Preview Info               `json:"preview"`
 }
 
 // Info is data.preview. The function that consumes the token returns neither the revision id nor the expiry

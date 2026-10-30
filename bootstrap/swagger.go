@@ -1,22 +1,7 @@
 package bootstrap
 
-// @title Materm Web Portal API
-// @version 1.0.0
-// @description Backend API for the Materm Web Portal
-
-// IMPORTANT: every /api/v1 endpoint requires the server-to-server portal key in the X-Portal-Key header
-// (doc/08 section 2.9). The header is documented as a security scheme, its value is never shown.
-
-// @contact.name Materm web team
-// TODO-materm-contact: set the support contact URL/e-mail of the project (@contact.url / @contact.email).
-
-// @BasePath /api/v1
-// @schemes http https
-
-// @securityDefinitions.apikey PortalKey
-// @in header
-// @name X-Portal-Key
-// @description Shared secret of the portal-frontend server (portal.frontendKeys).
+// General API info (title, security scheme, base path) lives above main() in cmd/server/main.go: swag reads
+// it only from the file named by `swag init -g`.
 
 import (
 	"fmt"

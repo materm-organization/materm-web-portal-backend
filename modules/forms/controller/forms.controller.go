@@ -40,6 +40,24 @@ func NewFormCtrl(svc services.FormService, locales *localize.Provider) FormCtrl 
 }
 
 // Definition is P-14: GET /public/forms/:slug.
+//
+// @Summary Form definition (P-14)
+// @Description What the frontend needs to render a form. Never carries recipients or limits.
+// @Tags Forms
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param slug path string true "Form slug"
+// @Param locale query string false "Content locale (^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$, lo = la). Absent: Accept-Language, then the default locale"
+// @Param Accept-Language header string false "Used when locale is absent"
+// @Param If-None-Match header string false "Weak ETag of an earlier answer; a match gives 304 without a body"
+// @Success 200 {object} response.Envelope{data=models.FormDefinition} "OK (ETag and Cache-Control set; Content-Language when the locale was negotiated)"
+// @Success 304 "Not modified: If-None-Match matched, no body"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key"
+// @Failure 422 {object} apperror.Body "Invalid parameter (errors[] names it)"
+// @Failure 404 {object} apperror.Body "Not found (cacheable for 30 s)"
+// @Failure 503 {object} apperror.Body "Database unavailable"
+// @Router /api/v1/public/forms/{slug} [get]
 func (h *formCtrl) Definition(c *fiber.Ctx) error {
 	neg, _, err := readkit.Negotiate(c, h.locales)
 	if err != nil {
@@ -54,6 +72,27 @@ func (h *formCtrl) Definition(c *fiber.Ctx) error {
 
 // Submit is P-15: POST /public/forms/:slug/submissions. The answer is 200 {status:"received"} for a normal and
 // for a spam submission alike.
+//
+// @Summary Submit a form (P-15)
+// @Description Stores a submission and answers 200 {status:received} for a normal and for a spam submission alike (no 201: there is no resource to point at). Server to server only: the portal frontend forwards the visitor's address in X-Client-IP and the User-Agent in X-Client-User-Agent. X-Client-IP is trusted only with a valid X-Portal-Key; when it is absent or malformed the connection address is used and all visitors share one rate-limit bucket. Never cached, never logged. Redis down = fail closed (503).
+// @Tags Forms
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param slug path string true "Form slug"
+// @Param X-Client-IP header string false "Visitor address (one IP, max 45 chars). Send it on every submission; used only for a daily salted HMAC, never stored raw"
+// @Param X-Client-User-Agent header string false "Visitor User-Agent (truncated to 300 chars)"
+// @Param X-Request-Id header string false "Optional correlation id (^[A-Za-z0-9._-]{8,64}$)"
+// @Param body body models.SubmissionRequest true "Submission; unknown members are refused"
+// @Success 200 {object} response.Envelope{data=models.Received} "Received (normal or spam)"
+// @Failure 400 {object} apperror.Body "Malformed JSON or trailing data"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key"
+// @Failure 404 {object} apperror.Body "Unknown or inactive form"
+// @Failure 415 {object} apperror.Body "Content-Type is not application/json"
+// @Failure 422 {object} apperror.Body "Validation error (errors[] names the field, in: body)"
+// @Failure 429 {object} apperror.Body "Rate limited per visitor or per portal key (Retry-After set)"
+// @Failure 503 {object} apperror.Body "Redis or database unavailable, fail closed (Retry-After set)"
+// @Router /api/v1/public/forms/{slug}/submissions [post]
 func (h *formCtrl) Submit(c *fiber.Ctx) error {
 	body := c.Body()
 	if !c.Is("json") {

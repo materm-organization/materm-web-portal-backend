@@ -174,8 +174,8 @@ type Section struct {
 	Variant    *string         `json:"variant"`
 	AnchorID   *string         `json:"anchor_id"`
 	IsFallback bool            `json:"is_fallback"`
-	Props      json.RawMessage `json:"props"`
-	Resolved   json.RawMessage `json:"resolved"`
+	Props      json.RawMessage `json:"props" swaggertype:"object"`
+	Resolved   json.RawMessage `json:"resolved" swaggertype:"object"`
 }
 
 // PageInput is one page as the views hold it. Locale is the normalised answer locale, Chain its fallback chain

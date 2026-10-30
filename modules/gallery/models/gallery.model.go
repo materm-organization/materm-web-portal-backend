@@ -47,3 +47,12 @@ type AlbumDetail struct {
 	Items  []AlbumItem `json:"items"`
 	Media  media.Map   `json:"media"`
 }
+
+// AlbumsEnvelope documents the body of P-11 for swagger (swag cannot instantiate readkit.MediaList[T]); the
+// handler writes readkit.MediaList[AlbumSummary], which has the same JSON shape.
+type AlbumsEnvelope struct {
+	Success bool            `json:"success"`
+	Data    []AlbumSummary  `json:"data"`
+	Meta    pagination.Meta `json:"meta"`
+	Media   media.Map       `json:"media"`
+}

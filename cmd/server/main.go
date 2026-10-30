@@ -21,6 +21,26 @@ import (
 // shutdownTimeout is how long in-flight requests get to finish.
 const shutdownTimeout = 15 * time.Second
 
+// @title Materm Web Portal API
+// @version 1.0.0
+// @description Backend API for the Materm Web Portal
+
+// IMPORTANT: every /api/v1 endpoint requires the server-to-server portal key in the X-Portal-Key header
+// (doc/08 section 2.9). The header is documented as a security scheme, its value is never shown.
+
+// @contact.name Materm web team
+// TODO-materm-contact: set the support contact URL/e-mail of the project (@contact.url / @contact.email).
+
+// @BasePath /
+// @schemes http https
+
+// @securityDefinitions.apikey PortalKey
+// @in header
+// @name X-Portal-Key
+// @description Shared secret of the portal-frontend server (portal.frontendKeys).
+
+// Paths are written in full (/api/v1/...) because the probes (/health, /ready) sit on the root, outside /api/v1.
+
 func main() { os.Exit(run()) }
 
 func run() int {

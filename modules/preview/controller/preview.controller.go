@@ -40,6 +40,23 @@ type previewCtrl struct{ svc services.PreviewService }
 func NewPreviewCtrl(svc services.PreviewService) PreviewCtrl { return &previewCtrl{svc: svc} }
 
 // Resolve is P-19: GET /preview/resolve (header X-Preview-Token, ?locale, ?path).
+//
+// @Summary Resolve a draft preview (P-19)
+// @Description Returns the frozen page or post snapshot that a preview token points at. The token travels only in the X-Preview-Token header (never the query string). Every answer, errors included, is Cache-Control: no-store and X-Robots-Tag: noindex, nofollow, noarchive. Requires the portal key as well.
+// @Tags Preview
+// @Accept json
+// @Produce json
+// @Security PortalKey
+// @Param X-Preview-Token header string true "Preview token (32..256 chars of [A-Za-z0-9._~-])"
+// @Param path query string false "Optional page path the token must belong to (max 300 bytes)"
+// @Param locale query string false "Content locale (^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$, lo = la). Absent: Accept-Language, then the default locale"
+// @Param Accept-Language header string false "Used when locale is absent"
+// @Success 200 {object} response.Envelope{data=models.PreviewData} "Snapshot (data.kind is page or post)"
+// @Failure 401 {object} apperror.Body "Missing or invalid X-Portal-Key, or invalid, expired or unknown preview token (code INVALID_TOKEN)"
+// @Failure 422 {object} apperror.Body "Malformed X-Preview-Token, path or locale"
+// @Failure 429 {object} apperror.Body "Too many preview attempts (Retry-After set)"
+// @Failure 503 {object} apperror.Body "Database unavailable"
+// @Router /api/v1/preview/resolve [get]
 func (h *previewCtrl) Resolve(c *fiber.Ctx) error {
 	// before anything can fail, so that error answers carry them too
 	c.Set(fiber.HeaderCacheControl, "no-store")
