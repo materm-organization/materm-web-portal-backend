@@ -228,8 +228,8 @@ func (r *seoRepo) Sitemap(ctx context.Context, locale string) ([]entities.Sitema
 
 func (r *seoRepo) Redirect(ctx context.Context, path, locale string) (*entities.ActiveRedirect, error) {
 	return first[entities.ActiveRedirect](sel[entities.ActiveRedirect](r.db.WithContext(ctx)).
-		Where("source_path = ? AND (locale_code IS NULL OR locale_code = ?)", path, locale).
-		Order("locale_code NULLS LAST"))
+		Where("source_path = ? AND (locale_code IS NULL OR locale_code = '' OR locale_code = ?)", path, locale).
+		Clauses(clause.OrderBy{Expression: clause.Expr{SQL: "CASE WHEN locale_code = ? THEN 0 ELSE 1 END", Vars: []any{locale}}}))
 }
 
 type assetRepo struct{ db *gorm.DB }

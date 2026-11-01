@@ -130,6 +130,10 @@ type Spec struct {
 	Params map[string]string
 	// TTL overrides the default lifetime (negative answers: 60 s; the locale chain: 10 min). 0 = default.
 	TTL time.Duration
+	// TTLFor, when set, picks the lifetime from the loaded value (it wins over TTL when it returns > 0). The
+	// value is the T that the Loader returned, boxed. Used by answers whose "nothing there" form must expire
+	// sooner than a found one (redirects: negative results live 30 s).
+	TTLFor func(value any) time.Duration
 }
 
 var (
@@ -181,7 +185,13 @@ func lookup[T any](ctx context.Context, c *Cache, spec Spec, load Loader[T]) (T,
 			return nil, err
 		}
 		if store {
-			c.store(ctx, key, gen, inv, tags, payload, spec.TTL)
+			ttl := spec.TTL
+			if spec.TTLFor != nil {
+				if d := spec.TTLFor(val); d > 0 {
+					ttl = d
+				}
+			}
+			c.store(ctx, key, gen, inv, tags, payload, ttl)
 		}
 		return payload, nil
 	}

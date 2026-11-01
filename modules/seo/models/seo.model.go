@@ -17,3 +17,19 @@ type SitemapData struct {
 	BaseURL string         `json:"base_url"`
 	Entries []SitemapEntry `json:"entries"`
 }
+
+// RedirectData is `data` of P-17: the place the visitor goes to. Target is the final internal path ("/new",
+// may carry a query string) or an absolute http(s) URL; StatusCode is the status of the LAST rule of the chain
+// (301, 302, 307 or 308); Hops is how many rules were followed (1 to 3).
+type RedirectData struct {
+	Target     string `json:"target"`
+	StatusCode int    `json:"status_code"`
+	Hops       int    `json:"hops"`
+}
+
+// RedirectOutcome is what the response cache stores for P-17: a negative answer (Found false) is cached too,
+// for a short time.
+type RedirectOutcome struct {
+	Found bool          `json:"found"`
+	Data  *RedirectData `json:"data,omitempty"`
+}

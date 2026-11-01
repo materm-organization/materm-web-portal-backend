@@ -48,7 +48,7 @@ SetupRepositories(ctx, env, redis)   // PostgreSQL (+ CheckRuntimeRole), cache r
       → SetupRouter(fiber, controllers, portalkey.Verifier)  // returns the routepolicy Registry and the /api/v1 Group
 ```
 
-`cmd/application/{repositories,services,controller,router,setup}.go` are the **only** places that wire dependencies by hand (hotspot files: one owner per milestone). `Repositories` carries the Redis handle as `RC` (a NIL interface when Redis is absent, never a typed-nil `*redis.Client`: every consumer takes `RC`), `Keys` (`rediskeys.New("")`) and `Submissions` (the `forms_submit_form` caller); `SetupServices` receives `env` (it needs `site.defaultBaseUrl` and `forms.*`). All content controllers share the ONE `*localize.Provider` (`Services.Locales`). Each module registers its routes in `router.go` on the `api` group returned by `SetupRouter`; the tests that build `Services` by hand use the stubs in `cmd/application/stubs_test.go`, and `TestAllPublicEndpointsAreMounted` pins the list of the 17 endpoints (P-01 ... P-16 and P-19).
+`cmd/application/{repositories,services,controller,router,setup}.go` are the **only** places that wire dependencies by hand (hotspot files: one owner per milestone). `Repositories` carries the Redis handle as `RC` (a NIL interface when Redis is absent, never a typed-nil `*redis.Client`: every consumer takes `RC`), `Keys` (`rediskeys.New("")`) and `Submissions` (the `forms_submit_form` caller); `SetupServices` receives `env` (it needs `site.defaultBaseUrl` and `forms.*`). All content controllers share the ONE `*localize.Provider` (`Services.Locales`). Each module registers its routes in `router.go` on the `api` group returned by `SetupRouter`; the tests that build `Services` by hand use the stubs in `cmd/application/stubs_test.go`, and `TestAllPublicEndpointsAreMounted` pins the list of the 18 endpoints (P-01 ... P-17 and P-19).
 
 ### Bootstrap (`bootstrap/`)
 
@@ -120,7 +120,7 @@ One folder each under `modules/`, layout `{controller,models,routes,services}` (
 |---|---|---|
 | `site` | P-01 `/public/locales`, P-02 `/public/settings`, P-03 `/public/ui-strings`, P-04 `/public/menus/:key`, P-05 `/public/site` | `v_public_locales`, `v_public_site_settings`, `v_public_ui_strings`, `v_published_menu_items` |
 | `pages` | P-06 `/public/pages/resolve?path=` | `v_published_pages`, `v_published_page_sections`, then what each section type needs via `pkg/assemble` |
-| `seo` | P-16 `/public/sitemap` | `v_sitemap` |
+| `seo` | P-16 `/public/sitemap`, P-17 `/public/redirects/resolve?path=&locale=` (normalise, locale rule before all-locales rule, <= 3 hops, loop = 404, status of the last hop, 404 cached 30 s via `Spec.TTLFor`, tag `redirects`) | `v_sitemap`, `v_active_redirects` |
 | `blog` | P-07 `/public/posts`, P-08 `/public/posts/:slug` (2-step slug, 308), P-09 `/public/categories`, P-10 `/public/tags` | `v_published_posts`, `v_published_categories`, `v_published_tags`, `v_published_post_tags`, `v_published_post_media`, `v_published_post_slugs` |
 | `gallery` | P-11 `/public/albums`, P-12 `/public/albums/:key` | `v_published_albums`, `v_published_album_items` |
 | `faq` | P-13 `/public/faq/:group_key` | `v_published_faq_items` |

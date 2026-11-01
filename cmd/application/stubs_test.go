@@ -51,6 +51,10 @@ func (stubSEO) Sitemap(context.Context, string) (*seomodels.SitemapData, error) 
 	return nil, apperror.NotFound()
 }
 
+func (stubSEO) Redirect(context.Context, string, string) (*seomodels.RedirectData, error) {
+	return nil, apperror.NotFound()
+}
+
 type stubBlog struct{}
 
 func (stubBlog) Posts(context.Context, string, blogservices.PostsQuery) (*blogmodels.PostsPage, error) {

@@ -2,7 +2,7 @@
 
 # Materm Web Portal Backend
 
-Go backend API for the Materm Web Portal website — built with Fiber v2. It is the **read API** of the public website (doc/08 section 2): it reads published content from PostgreSQL views with a read-only role and is called **only server-to-server** by the portal-frontend with the `X-Portal-Key` header. It never migrates or writes the schema. It provides the foundation (error/response envelopes, request id, access log, portal key guard, `/health`, `/ready`) and, since milestone M2, the 16 public read/submit endpoints below (site, pages, seo, blog, gallery, faq, forms) plus, since M4, the preview endpoint `GET /api/v1/preview/resolve` (P-19, PB-11): 17 in all.
+Go backend API for the Materm Web Portal website — built with Fiber v2. It is the **read API** of the public website (doc/08 section 2): it reads published content from PostgreSQL views with a read-only role and is called **only server-to-server** by the portal-frontend with the `X-Portal-Key` header. It never migrates or writes the schema. It provides the foundation (error/response envelopes, request id, access log, portal key guard, `/health`, `/ready`) and, since milestone M2, the 17 public read/submit endpoints below (site, pages, seo incl. the redirect resolver P-17, blog, gallery, faq, forms) plus, since M4, the preview endpoint `GET /api/v1/preview/resolve` (P-19, PB-11): 18 in all (22 routes with the 4 probe paths).
 
 ---
 
@@ -186,6 +186,9 @@ Public content endpoints (all need `X-Portal-Key`; `?locale=` then `Accept-Langu
 | forms | `GET /public/forms/:slug` | P-14 | `v_published_forms`, `v_published_form_fields` |
 | forms | `POST /public/forms/:slug/submissions` | P-15 | the function `forms_submit_form` (the one write) |
 | seo | `GET /public/sitemap` | P-16 | `v_sitemap` |
+| seo | `GET /public/redirects/resolve?path=&locale=` | P-17 | `v_active_redirects` |
+
+P-17 (the frontend calls it only before answering 404): `path` is required, must start with `/` and is normalised like `cms_redirects.source_path` (query and fragment dropped, lower-cased, trailing slash removed, root stays `/`; at most 512 bytes, no spaces or control characters, else 422 `in:"query"`). Rules of the requested locale win over rules with a blank locale; internal targets are followed on the server for at most 3 hops; a loop answers 404. `200 {data:{target, status_code, hops}}`: `target` is the final internal path (may carry a query) or an absolute http(s) URL, `status_code` (301/302/307/308) is that of the LAST rule followed, `hops` is 1 to 3 (a longer chain stops at hop 3). No active rule: `404 NOT_FOUND` with `Cache-Control: public, max-age=30`. Cached in Redis under the tag `redirects`; a 404 is cached for 30 s (found answers use `cache.ttl`).
 
 Preview endpoint (needs `X-Portal-Key` like everything under `/api/v1`; not under `/public`):
 

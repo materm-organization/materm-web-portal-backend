@@ -1,5 +1,5 @@
-// Package services is the logic of the seo module: the sitemap (P-16). Redirects (P-17) are P2 and are not
-// registered; robots.txt comes from the frontend's environment (FR-SEO-04), so there is no robots endpoint.
+// Package services is the logic of the seo module: the sitemap (P-16) and the redirect resolver (P-17);
+// robots.txt comes from the frontend's environment (FR-SEO-04), so there is no robots endpoint.
 package services
 
 import (
@@ -17,6 +17,8 @@ import (
 type SEOService interface {
 	// Sitemap answers P-16 for the default locale (the sitemap lists canonical URLs).
 	Sitemap(ctx context.Context, defaultLocale string) (*models.SitemapData, error)
+	// Redirect answers P-17 for a NormalizePath-ed path in a locale; ErrRedirectNotFound when nothing matches.
+	Redirect(ctx context.Context, locale, path string) (*models.RedirectData, error)
 }
 
 // Deps are the collaborators of the service.

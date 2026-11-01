@@ -26,8 +26,8 @@ func TestEveryRouteNeedsThePortalKey(t *testing.T) {
 	st := newStack(t)
 	st.App.AssertEveryRouteDeclaresAPolicy(t)
 	want := []string{
-		"/api/v1/public/locales", "/api/v1/public/menus/:key", "/api/v1/public/pages/resolve", "/api/v1/public/settings",
-		"/api/v1/public/site", "/api/v1/public/sitemap", "/api/v1/public/ui-strings",
+		"/api/v1/public/locales", "/api/v1/public/menus/:key", "/api/v1/public/pages/resolve", "/api/v1/public/redirects/resolve",
+		"/api/v1/public/settings", "/api/v1/public/site", "/api/v1/public/sitemap", "/api/v1/public/ui-strings",
 	}
 	got := st.App.Reg.Entries()
 	if len(got) != len(want) {

@@ -7,7 +7,8 @@ import (
 	"github.com/materm-organization/materm-web-portal-backend/pkg/routepolicy"
 )
 
-// Register adds P-16 to the /api/v1 group (portal key required).
+// Register adds P-16 and P-17 to the /api/v1 group (portal key required).
 func Register(api *routepolicy.Group, ctrl controller.SEOCtrl) {
 	api.Get("/public/sitemap", routepolicy.PortalKey(), readkit.Guard(ctrl.Sitemap))
+	api.Get("/public/redirects/resolve", routepolicy.PortalKey(), readkit.Guard(ctrl.Redirect))
 }
