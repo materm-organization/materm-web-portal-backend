@@ -72,7 +72,7 @@ func SetupRepositories(ctx context.Context, env *bootstrap.Env, rdb *redis.Clien
 		PreviewTokens: previewrepositories.New(db),
 		RC:            rc,
 		Keys:          keys,
-		Media:         media.NewBuilder(media.Config{PathIP: env.File.PathIP, StaticPrefix: env.Media.StaticPrefix}),
+		Media:         media.NewBuilder(media.Config{PathIP: env.MediaBaseURL(), StaticPrefix: env.Media.StaticPrefix}),
 		PublicCache: publiccache.New(publiccache.Options{
 			Client: rc, Keys: keys, Enabled: env.Cache.Enabled, TTL: env.Cache.TTL,
 		}),

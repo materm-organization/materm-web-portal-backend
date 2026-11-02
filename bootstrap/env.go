@@ -167,8 +167,22 @@ type FileConfig struct {
 
 // MediaConfig: StaticPrefix marks storage keys of the first-day media that portal-frontend serves from its
 // own public/ folder (doc/04 section 8.3).
+//
+// BaseURL (media.baseUrl, env MEDIA_BASE_URL) is the public base URL that is put in front of a stored file
+// path to answer an absolute media URL; it is configuration only and never stored in the database. When it is
+// blank the older key file.path_ip is used (see MediaBaseURL).
 type MediaConfig struct {
 	StaticPrefix string `mapstructure:"staticPrefix"`
+	BaseURL      string `mapstructure:"baseUrl"`
+}
+
+// MediaBaseURL is the base of every file-service media URL: media.baseUrl (MEDIA_BASE_URL) when set, else
+// file.path_ip. Blank = no file service media URLs (only the static/ placeholders get one).
+func (e *Env) MediaBaseURL() string {
+	if b := strings.TrimSpace(e.Media.BaseURL); b != "" {
+		return b
+	}
+	return strings.TrimSpace(e.File.PathIP)
 }
 
 // CacheConfig: Enabled=false turns the response cache off (debugging); TTL is the upper bound of staleness.
@@ -301,6 +315,8 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("portal.frontendKeys", []string{})
 	v.SetDefault("file.path_ip", "")
 	v.SetDefault("media.staticPrefix", defaultStaticPrefix)
+	v.SetDefault("media.baseUrl", "")
+	_ = v.BindEnv("media.baseUrl", "MEDIA_BASE_URL")
 	v.SetDefault("redis.dialTimeout", defaultRedisDialTimeout)
 	v.SetDefault("redis.readTimeout", defaultRedisIOTimeout)
 	v.SetDefault("redis.writeTimeout", defaultRedisIOTimeout)
@@ -583,14 +599,16 @@ func (e *Env) validatePortalKeys(strict bool, fail, warn func(string, ...any)) {
 	}
 }
 
-// validateFile: file.path_ip is optional; when set it must be an http(s) URL with a host.
+// validateFile: media.baseUrl and file.path_ip are optional; when set each must be an http(s) URL with a host.
 func (e *Env) validateFile(fail func(string, ...any)) {
-	if e.File.PathIP == "" {
-		return
-	}
-	u, err := url.Parse(e.File.PathIP)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		fail("file.path_ip: must be an http(s) URL with a host")
+	for _, c := range []struct{ key, val string }{{"media.baseUrl", e.Media.BaseURL}, {"file.path_ip", e.File.PathIP}} {
+		if strings.TrimSpace(c.val) == "" {
+			continue
+		}
+		u, err := url.Parse(strings.TrimSpace(c.val))
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			fail("%s: must be an http(s) URL with a host", c.key)
+		}
 	}
 }
 

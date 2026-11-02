@@ -236,6 +236,7 @@ func TestValidateFailFast(t *testing.T) {
 		"cors with path":  {func(e *Env) { e.Server.CORSOrigins = []string{"https://a.test/app"} }, "origin like"},
 		"cors no scheme":  {func(e *Env) { e.Server.CORSOrigins = []string{"a.test"} }, "origin like"},
 		"path_ip":         {func(e *Env) { e.File.PathIP = "ftp://x" }, "file.path_ip"},
+		"media base url":  {func(e *Env) { e.Media.BaseURL = "ftp://x" }, "media.baseUrl"},
 		"base url":        {func(e *Env) { e.Site.DefaultBaseURL = "not a url" }, "site.defaultBaseUrl"},
 		"key caps":        {func(e *Env) { e.Forms.KeyPerMinute, e.Forms.KeyPerDay = 50, 10 }, "forms.keyPerMinute"},
 		"dedupe ttl":      {func(e *Env) { e.Forms.DedupeTTL = 48 * time.Hour }, "forms.dedupeTTL"},
@@ -414,5 +415,32 @@ func TestMetricsConfig(t *testing.T) {
 	}
 	if loaded.Metrics.Port != 9100 || loaded.Metrics.Bind != "10.0.0.5" {
 		t.Errorf("env override: %+v", loaded.Metrics)
+	}
+}
+
+// MEDIA_BASE_URL (media.baseUrl) is the media base; file.path_ip stays as the fallback.
+func TestMediaBaseURL(t *testing.T) {
+	clearEnv(t)
+	e := &Env{}
+	if got := e.MediaBaseURL(); got != "" {
+		t.Fatalf("blank config: got %q", got)
+	}
+	e.File.PathIP = "http://old.test"
+	if got := e.MediaBaseURL(); got != "http://old.test" {
+		t.Fatalf("fallback to file.path_ip: got %q", got)
+	}
+	e.Media.BaseURL = " http://files.test "
+	if got := e.MediaBaseURL(); got != "http://files.test" {
+		t.Fatalf("media.baseUrl wins: got %q", got)
+	}
+
+	t.Setenv("MEDIA_BASE_URL", "http://env.test:3310")
+	dir := writeConfig(t, blankTemplate)
+	env, err := LoadEnv(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Media.BaseURL != "http://env.test:3310" || env.MediaBaseURL() != "http://env.test:3310" {
+		t.Fatalf("MEDIA_BASE_URL not read: %q", env.Media.BaseURL)
 	}
 }

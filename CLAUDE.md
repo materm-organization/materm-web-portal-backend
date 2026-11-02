@@ -93,7 +93,7 @@ Prefix `materm-portal:` (`constants.AppKeyPrefix`); **never FLUSH** (the Redis i
 | `redisguard/` | circuit breaker hook on the Redis client (fast-fail while Redis is down), throttled go-redis logger |
 | `publiccache/` | response cache with generation + tag sets, stampede protection, signed invalidation subscriber (above) |
 | `localize/` | `Chain` from `v_public_locales` (never `v_locale_resolution`: not granted), `Negotiate` (`?locale` -> `Accept-Language` -> default; `lo` = `la`; 422 `in:"query"` on a bad code), `Collapse` of `x-localized` leaves with compiled `Hints`, `Provider` (process copy 60 s) |
-| `media/` | `Builder.URL/Item/Resolve`: `file.path_ip` + `/` + `storage_key`; keys under `media.staticPrefix` become `/<rest>`; `CollectIDs` finds `media_id` at any depth |
+| `media/` | `Builder.URL/Item/Resolve`: `media.baseUrl` (env `MEDIA_BASE_URL`, falls back to `file.path_ip`) + `/` + `storage_key`; keys under `media.staticPrefix` become `/<rest>`; `CollectIDs` finds `media_id` at any depth |
 | `richtext/` | `Resolve(doc, Lite\|Full, Resolver)`: allow-list sanitiser producing a JSON doc (no HTML), server-side link resolution, collects image `media_id`s; `CollectLinks` + `MapResolver` for batched lookups |
 | `assemble/` | page assembler of P-06: section plan, one resolver per section type, rich-text link batching, the shared `BuildForm` / `BuildFAQItems`, settings and locale helpers (no HTTP: the HTTP helpers are `modules/content/readkit`) |
 | `iphash/` `clientip/` | salted daily IP hash (Redis salt, never the raw address in a key) and the visitor address/user agent from the trusted forwarding headers (`X-Client-IP`, `X-Client-User-Agent`) |
