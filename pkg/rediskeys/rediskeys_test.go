@@ -19,7 +19,7 @@ func TestEveryKeyCarriesThePrefix(t *testing.T) {
 		k := New(prefix)
 		for name, key := range map[string]string{
 			"Gen": k.Gen(), "Inv": k.Inv(), "Cache": k.Cache(3, "page", "en", "abc"), "Tag": k.Tag("pages"), "Locales": k.Locales(),
-			"Preview": k.Preview("deadbeef"), "ReadRL": k.ReadRL("203.0.113.1", now),
+			"Preview":      k.Preview("deadbeef"),
 			"FormWindowRL": k.FormWindowRL("contact", "abc", now), "FormDailyRL": k.FormDailyRL("contact", "abc", now),
 			"IPSalt": k.IPSalt(now), "FormKeyMinuteRL": k.FormKeyMinuteRL("abcdef0123456789", now),
 			"FormKeyDailyRL": k.FormKeyDailyRL("abcdef0123456789", now), "FormDup": k.FormDup("contact", "i", "h"),
@@ -60,13 +60,5 @@ func TestKeyShapes(t *testing.T) {
 		if got != exp {
 			t.Errorf("got %q, want %q", got, exp)
 		}
-	}
-}
-
-// A raw address must never appear in a key.
-func TestReadRLHashesTheAddress(t *testing.T) {
-	key := New("").ReadRL("203.0.113.1", time.Now())
-	if strings.Contains(key, "203.0.113.1") {
-		t.Fatalf("raw IP in key %q", key)
 	}
 }

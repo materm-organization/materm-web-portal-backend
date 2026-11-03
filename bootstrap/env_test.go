@@ -63,7 +63,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		for _, p := range []string{"SERVER_", "DATABASE_", "REDIS_", "PORTAL_", "FILE_", "MEDIA_", "CACHE_", "RATELIMIT_", "FORMS_", "PREVIEW_", "SITE_", "METRICS_"} {
+		for _, p := range []string{"SERVER_", "DATABASE_", "REDIS_", "PORTAL_", "FILE_", "MEDIA_", "CACHE_", "FORMS_", "PREVIEW_", "SITE_", "METRICS_"} {
 			if strings.HasPrefix(k, p) {
 				t.Setenv(k, "")
 			}
@@ -122,7 +122,6 @@ func TestEnvOverridesBlankTemplate(t *testing.T) {
 	t.Setenv("MEDIA_STATICPREFIX", "assets/")
 	t.Setenv("CACHE_ENABLED", "false")
 	t.Setenv("CACHE_TTL", "2h")
-	t.Setenv("RATELIMIT_READPERMINUTE", "120")
 	t.Setenv("FORMS_DAILYLIMIT", "7")
 	t.Setenv("FORMS_MINFILLSECONDS", "5")
 	t.Setenv("FORMS_MAXCLOCKSKEW", "1m")
@@ -159,9 +158,6 @@ func TestEnvOverridesBlankTemplate(t *testing.T) {
 	if env.Cache.Enabled || env.Cache.TTL != 2*time.Hour {
 		t.Errorf("cache: %+v", env.Cache)
 	}
-	if env.RateLimit.ReadPerMinute != 120 {
-		t.Errorf("rateLimit: %+v", env.RateLimit)
-	}
 	if f := env.Forms; f.DailyLimit != 7 || f.MinFillSeconds != 5 || f.MaxClockSkew != time.Minute || f.KeyPerMinute != 11 || f.KeyPerDay != 222 || f.DedupeTTL != 45*time.Second {
 		t.Errorf("forms: %+v", f)
 	}
@@ -189,8 +185,8 @@ func TestDefaults(t *testing.T) {
 	if p := env.Database.Pool; p.MaxOpenConns != 15 || p.MaxIdleConns != 5 || p.ConnMaxLifetimeMinutes != 30 || p.ConnMaxIdleTimeMinutes != 5 {
 		t.Errorf("pool: %+v", p)
 	}
-	if env.Media.StaticPrefix != "static/" || !env.Cache.Enabled || env.Cache.TTL != 24*time.Hour || env.RateLimit.ReadPerMinute != 300 {
-		t.Errorf("media/cache/rateLimit: %+v %+v %+v", env.Media, env.Cache, env.RateLimit)
+	if env.Media.StaticPrefix != "static/" || !env.Cache.Enabled || env.Cache.TTL != 24*time.Hour {
+		t.Errorf("media/cache: %+v %+v", env.Media, env.Cache)
 	}
 	if f := env.Forms; f.DailyLimit != 20 || f.MinFillSeconds != 3 || f.MaxClockSkew != 10*time.Minute || f.KeyPerMinute != 30 || f.KeyPerDay != 1000 || f.DedupeTTL != 120*time.Second {
 		t.Errorf("forms: %+v", f)

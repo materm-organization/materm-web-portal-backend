@@ -4,11 +4,11 @@
 // with other projects (and with the admin backend, which owns "materm-admin:"), so a key without it must
 // never be written, and nothing flushes the database. Tests build Keys with their own random prefix
 // (redistest) so that parallel test packages on the one scratch Redis cannot see each other's keys. Raw IP
-// addresses never appear in a key: they are hashed (ratelimit.Hash: the first 32 hex characters of sha256),
+// addresses never appear in a key: they are hashed (the first 32 hex characters of sha256),
 // and no key carries personal data.
 //
 // The cache key families (Cache, Tag, Locales, Gen) are used by pkg/publiccache (PB-4); the rate-limit and
-// salt families by the read limiter and the forms module (PB-9). They are named here first so that the
+// salt families by the forms and preview limiters (PB-9). They are named here first so that the
 // prefix rule and its test cover them from the start.
 package rediskeys
 
@@ -17,7 +17,6 @@ import (
 	"time"
 
 	constants "github.com/materm-organization/materm-web-portal-backend/pkg/constants/services"
-	"github.com/materm-organization/materm-web-portal-backend/pkg/ratelimit"
 )
 
 // Keys builds the key names under one prefix.
@@ -69,11 +68,6 @@ func (k Keys) PreviewTokenRL(tokenHash32 string, at time.Time) string {
 // token each time, which the per-token counter cannot.
 func (k Keys) PreviewKeyRL(keyID string, at time.Time) string {
 	return k.prefix + "rl:preview-key:" + keyID + ":" + at.UTC().Format("200601021504")
-}
-
-// ReadRL counts reads of one client address in one minute (only for callers without a portal key).
-func (k Keys) ReadRL(ip string, at time.Time) string {
-	return k.prefix + "rl:read:" + ratelimit.Hash(ip) + ":" + at.UTC().Format("200601021504")
 }
 
 // FormWindowRL counts submissions of one form by one hashed client in a rate-limit window that started at

@@ -24,18 +24,17 @@ import (
 // be ignored silently. Sections the portal does not use (database.sell/erp/device, mailer, jwt, bootstrap)
 // are not part of Env at all: whatever the template holds there is ignored.
 type Env struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Redis     RedisConfig     `mapstructure:"redis"`
-	Portal    PortalConfig    `mapstructure:"portal"`
-	File      FileConfig      `mapstructure:"file"`
-	Media     MediaConfig     `mapstructure:"media"`
-	Cache     CacheConfig     `mapstructure:"cache"`
-	RateLimit RateLimitConfig `mapstructure:"rateLimit"`
-	Forms     FormsConfig     `mapstructure:"forms"`
-	Preview   PreviewConfig   `mapstructure:"preview"`
-	Site      SiteConfig      `mapstructure:"site"`
-	Metrics   MetricsConfig   `mapstructure:"metrics"`
+	Server   ServerConfig   `mapstructure:"server"`
+	Database DatabaseConfig `mapstructure:"database"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	Portal   PortalConfig   `mapstructure:"portal"`
+	File     FileConfig     `mapstructure:"file"`
+	Media    MediaConfig    `mapstructure:"media"`
+	Cache    CacheConfig    `mapstructure:"cache"`
+	Forms    FormsConfig    `mapstructure:"forms"`
+	Preview  PreviewConfig  `mapstructure:"preview"`
+	Site     SiteConfig     `mapstructure:"site"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
 }
 
 // Deployment environments of server.env.
@@ -200,12 +199,6 @@ type CacheConfig struct {
 	InvalidateMaxAge  time.Duration `mapstructure:"invalidateMaxAge"`
 }
 
-// RateLimitConfig: ReadPerMinute is the read ceiling (NFR-15). The portal reaches its API only with a portal
-// key, so it is applied by the read limiter only if one is ever mounted.
-type RateLimitConfig struct {
-	ReadPerMinute int `mapstructure:"readPerMinute"`
-}
-
 // FormsConfig: limits of the contact form that are not in the database (doc/08 section 6.3).
 type FormsConfig struct {
 	DailyLimit     int           `mapstructure:"dailyLimit"`
@@ -275,19 +268,18 @@ func loadEnv(dir string) (*Env, error) {
 
 // Default values of the keys of doc/08 section 2.9.
 const (
-	defaultStaticPrefix  = "static/"
-	defaultCacheTTL      = 24 * time.Hour
-	defaultReadPerMinute = 300
-	defaultDailyLimit    = 20
-	defaultMinFill       = 3
-	defaultMaxClockSkew  = 10 * time.Minute
-	defaultKeyPerMinute  = 30
-	defaultKeyPerDay     = 1000
-	defaultDedupeTTL     = 120 * time.Second
-	defaultPreviewTTL    = 10 * time.Second
-	defaultPreviewToken  = 60
-	defaultPreviewKey    = 300
-	defaultMetricsBind   = "127.0.0.1"
+	defaultStaticPrefix = "static/"
+	defaultCacheTTL     = 24 * time.Hour
+	defaultDailyLimit   = 20
+	defaultMinFill      = 3
+	defaultMaxClockSkew = 10 * time.Minute
+	defaultKeyPerMinute = 30
+	defaultKeyPerDay    = 1000
+	defaultDedupeTTL    = 120 * time.Second
+	defaultPreviewTTL   = 10 * time.Second
+	defaultPreviewToken = 60
+	defaultPreviewKey   = 300
+	defaultMetricsBind  = "127.0.0.1"
 
 	defaultRedisDialTimeout = 200 * time.Millisecond
 	defaultRedisIOTimeout   = 300 * time.Millisecond
@@ -327,7 +319,6 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("cache.invalidateKey", "")
 	v.SetDefault("cache.invalidateChannel", DefaultInvalidateChannel)
 	v.SetDefault("cache.invalidateMaxAge", defaultInvalidateMaxAge)
-	v.SetDefault("rateLimit.readPerMinute", defaultReadPerMinute)
 	v.SetDefault("forms.dailyLimit", defaultDailyLimit)
 	v.SetDefault("forms.minFillSeconds", defaultMinFill)
 	v.SetDefault("forms.maxClockSkew", defaultMaxClockSkew)
@@ -402,9 +393,6 @@ func (e *Env) Defaults() {
 	}
 	if e.Cache.InvalidateMaxAge <= 0 {
 		e.Cache.InvalidateMaxAge = defaultInvalidateMaxAge
-	}
-	if e.RateLimit.ReadPerMinute <= 0 {
-		e.RateLimit.ReadPerMinute = defaultReadPerMinute
 	}
 	if e.Forms.DailyLimit <= 0 {
 		e.Forms.DailyLimit = defaultDailyLimit

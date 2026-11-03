@@ -114,7 +114,6 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `cache.invalidateKey` | blank | HMAC secret of the cache-invalidation messages the admin backend publishes (>= 32 printable ASCII bytes; env `CACHE_INVALIDATEKEY`, never in the repo). Blank outside dev: the subscriber does not start (warning); blank in dev: it accepts unsigned messages |
 | `cache.invalidateChannel` | `materm:cms.invalidate` | Redis pub/sub channel of the invalidation messages |
 | `cache.invalidateMaxAge` | `10m` | oldest `occurred_at` an invalidation message may have (replay protection) |
-| `rateLimit.readPerMinute` | `300` | read ceiling per client |
 | `forms.dailyLimit`, `forms.minFillSeconds`, `forms.maxClockSkew` | `20`, `3`, `10m` | fallbacks of the form's own limits (`rate_limit_daily_max`, `min_fill_seconds`) and how far a `rendered_at` may lie in the future |
 | `forms.keyPerMinute`, `forms.keyPerDay` | `30`, `1000` | submissions of ALL visitors together per portal key (doc/10 R-020: a leaked key plus a random `X-Client-IP` per call must not bypass the per-visitor counters); `keyPerMinute` must not exceed `keyPerDay` |
 | `forms.dedupeTTL` | `120s` | an identical submission (same visitor, form and content) inside this window is answered `received` without a second insert (max `24h`) |
