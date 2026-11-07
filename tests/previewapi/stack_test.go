@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -116,10 +117,12 @@ func (l *memLimiter) Reset(context.Context, string) error                       
 // ---- shared sections --------------------------------------------------------------------------------------------
 
 type fakeShared struct {
-	rows []entities.PublishedPageSection
+	rows  []entities.PublishedPageSection
+	calls atomic.Int32 // how many times the assembler asked for published shared sections
 }
 
-func (f fakeShared) SharedSections(_ context.Context, ids []int64) ([]entities.PublishedPageSection, error) {
+func (f *fakeShared) SharedSections(_ context.Context, ids []int64) ([]entities.PublishedPageSection, error) {
+	f.calls.Add(1)
 	var out []entities.PublishedPageSection
 	for _, r := range f.rows {
 		for _, id := range ids {

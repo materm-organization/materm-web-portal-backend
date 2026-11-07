@@ -399,7 +399,7 @@ func TestSharedSections(t *testing.T) {
 	pub := entities.JSONB(`{"title":{"la":"From the shared section"}}`)
 	var variant = "wide"
 	st := newStack(t, func(o *opts) {
-		o.shared = fakeShared{rows: []entities.PublishedPageSection{
+		o.shared = &fakeShared{rows: []entities.PublishedPageSection{
 			{PageID: 1, SectionID: 1, SectionKey: "intro_heading", SectionVersion: 1, Variant: &variant, Props: pub, SharedSectionID: &id},
 		}}
 	})

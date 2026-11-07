@@ -44,6 +44,22 @@ type RawPage struct {
 	} `json:"page"`
 	Translations []RawPageTranslation `json:"translations"`
 	Sections     []RawSection         `json:"sections"`
+	// SharedSections is the working copy of the shared sections the visible sections use, frozen by the admin
+	// into the preview snapshot (doc/05 section 18.12.2). A POINTER: nil = the key is absent (a link issued before
+	// the admin wrote the member: the PUBLISHED content is read as before), non-nil (even empty) = the member is
+	// authoritative and SharedSource is not consulted.
+	SharedSections *[]RawSharedSection `json:"shared_sections"`
+}
+
+// RawSharedSection is one entry of shared_sections[]. The admin also writes name and draft_revision_id; the
+// preview does not use them. State is "published" when the shared section was live at issue time.
+type RawSharedSection struct {
+	ID             int64           `json:"id"`
+	SectionType    string          `json:"section_type"`
+	SectionVersion int             `json:"section_version"`
+	Variant        *string         `json:"variant"`
+	Props          json.RawMessage `json:"props"`
+	State          string          `json:"state"`
 }
 
 // RawPageTranslation is one entry of translations[]. A missing is_enabled counts as enabled.
@@ -120,14 +136,27 @@ func (a *Assembler) PreviewPage(ctx context.Context, raw *RawPage, o PreviewOpti
 	}
 	sort.SliceStable(keep, func(x, y int) bool { return keep[x].s.SortOrder < keep[y].s.SortOrder })
 
-	// shared sections: the snapshot holds the reference only; the content is the PUBLISHED shared section
-	kept := make([]RawSection, len(keep))
-	for n, k := range keep {
-		kept[n] = k.s
-	}
-	shared, err := a.sharedFor(ctx, kept)
-	if err != nil {
-		return nil, err
+	// shared sections: with the snapshot member `shared_sections` the content is the working copy frozen in it
+	// (SharedSource is not consulted); without it (a link issued before the member existed) the content is the
+	// PUBLISHED shared section
+	var frozen map[int64]RawSharedSection
+	var shared map[int64]entities.PublishedPageSection
+	if raw.SharedSections != nil {
+		frozen = make(map[int64]RawSharedSection, len(*raw.SharedSections))
+		for _, e := range *raw.SharedSections {
+			if _, dup := frozen[e.ID]; !dup {
+				frozen[e.ID] = e
+			}
+		}
+	} else {
+		kept := make([]RawSection, len(keep))
+		for n, k := range keep {
+			kept[n] = k.s
+		}
+		var err error
+		if shared, err = a.sharedFor(ctx, kept); err != nil {
+			return nil, err
+		}
 	}
 
 	var rows []entities.PublishedPageSection
@@ -146,7 +175,20 @@ func (a *Assembler) PreviewPage(ctx context.Context, raw *RawPage, o PreviewOpti
 		if row.PublicID == "" {
 			row.PublicID = "preview-" + strconv.Itoa(k.i)
 		}
-		if s.SharedSectionID != nil {
+		if s.SharedSectionID != nil && raw.SharedSections != nil {
+			e, ok := frozen[*s.SharedSectionID]
+			if !ok || e.SectionType != s.SectionType || e.SectionVersion != version {
+				early.add(WarnSharedSectionUnavailable, sectionPath(k.i), "shared section %d is not available for this preview, the section is left out", *s.SharedSectionID)
+				continue
+			}
+			row.Props = entities.JSONB(e.Props)
+			if row.Variant == nil {
+				row.Variant = e.Variant
+			}
+			if e.State != "published" {
+				early.add(WarnSharedSectionNotLive, sectionPath(k.i)+"/shared_section_id", "shared section %d is not live, the public page would not show it", *s.SharedSectionID)
+			}
+		} else if s.SharedSectionID != nil {
 			sh, ok := shared[*s.SharedSectionID]
 			if !ok || sh.SectionKey != s.SectionType {
 				early.add(WarnSharedSectionUnavailable, sectionPath(k.i), "shared section %d is not published, the section is left out", *s.SharedSectionID)

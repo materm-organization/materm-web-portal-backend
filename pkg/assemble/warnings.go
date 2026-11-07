@@ -17,6 +17,10 @@ const (
 	// WarnSharedSectionUnavailable: the section uses a shared section that is not published, so its content
 	// cannot be shown: the section is left out.
 	WarnSharedSectionUnavailable = "shared_section_unavailable"
+	// WarnSharedSectionNotLive: PREVIEW only. The page snapshot froze a working copy of the shared section whose
+	// state is not "published" (draft, in_review, scheduled, archived, expired): the section is shown, the public
+	// page would not show it (doc/05 section 18.12).
+	WarnSharedSectionNotLive = "shared_section_not_live"
 )
 
 // Warning is one entry of data.preview.warnings: something in the previewed content that the public page would

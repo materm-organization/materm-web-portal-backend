@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -372,5 +374,51 @@ func TestDBRoleCannotReadTheTokenTables(t *testing.T) {
 	repo := previewrepos.New(e.s.GormRO(t))
 	if _, err := repo.Consume(context.Background(), make([]byte, 32)); err != previewrepos.ErrInvalid {
 		t.Errorf("unknown hash: %v, want ErrInvalid", err)
+	}
+}
+
+// A snapshot in the shape the admin writes after doc/05 section 18.12.2 (the baseline page plus a section that
+// uses a shared section that was NEVER published, and the frozen member) goes through the real
+// cms_consume_preview_token as the read-only role: the section shows the frozen working copy with the
+// shared_section_not_live warning. The role needs no new grant (the member travels in the snapshot).
+func TestDBPreviewSharedSectionNeverPublished(t *testing.T) {
+	e := dbSetup(t)
+	st := e.stack(t) // the real repositories: the shared source is the published view, which has no row for this id
+	var snap string
+	if err := e.s.Owner.QueryRow(baselinePage, e.home).Scan(&snap); err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(snap), &doc); err != nil {
+		t.Fatal(err)
+	}
+	const sharedID = 990001
+	secs := doc["sections"].([]any)
+	idx := len(secs)
+	doc["sections"] = append(secs, map[string]any{"id": 990101, "public_id": "0192e1f0-3c2a-7d11-8b5e-6a0c1d2e3f88", "section_type": "intro_heading",
+		"section_version": 1, "variant": nil, "sort_order": 99, "is_visible": true, "anchor_id": nil, "props": map[string]any{}, "shared_section_id": sharedID})
+	doc["shared_sections"] = []any{map[string]any{"id": sharedID, "name": "Draft only", "section_type": "intro_heading", "section_version": 1,
+		"variant": "wide", "props": map[string]any{"title": map[string]any{"la": "Frozen draft title", "en": "Frozen draft title"}}, "state": "draft", "draft_revision_id": nil}}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := e.issueSnapshot(t, "db-shared", "cms.pages", e.home, "", time.Hour, string(b))
+
+	r := st.resolve(t, tok, "?locale=en")
+	if r.Status != http.StatusOK {
+		t.Fatalf("%d %s", r.Status, r.Body)
+	}
+	if !strings.Contains(string(r.Body), "Frozen draft title") {
+		t.Errorf("the frozen working copy is not shown: %s", r.Body)
+	}
+	want := "shared_section_not_live@/sections/" + strconv.Itoa(idx) + "/shared_section_id"
+	var got []string
+	for _, w := range r.Data()["preview"].(map[string]any)["warnings"].([]any) {
+		m := w.(map[string]any)
+		got = append(got, m["code"].(string)+"@"+m["path"].(string))
+	}
+	if !contains(got, want) || contains(got, "shared_section_unavailable@/sections/"+strconv.Itoa(idx)) {
+		t.Errorf("warnings %v, want %s", got, want)
 	}
 }
