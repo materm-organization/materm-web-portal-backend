@@ -440,3 +440,40 @@ func TestMediaBaseURL(t *testing.T) {
 		t.Fatalf("MEDIA_BASE_URL not read: %q", env.Media.BaseURL)
 	}
 }
+
+// media base: a blank pair warns, an http base outside dev is refused, dev accepts http.
+func TestValidateMediaBase(t *testing.T) {
+	e := validEnv()
+	warnings, err := e.Validate()
+	if err != nil {
+		t.Fatalf("blank media base must not fail: %v", err)
+	}
+	if !hasProblem(warnings, "media.baseUrl and file.path_ip are both blank") {
+		t.Errorf("blank media base must warn, got %v", warnings)
+	}
+
+	e = validEnv()
+	e.Media.BaseURL = "https://files.test"
+	warnings, err = e.Validate()
+	if err != nil || hasProblem(warnings, "both blank") {
+		t.Errorf("https media base: err=%v warnings=%v", err, warnings)
+	}
+
+	for _, set := range []func(*Env){
+		func(e *Env) { e.Media.BaseURL = "http://files.test" },
+		func(e *Env) { e.File.PathIP = "http://files.test" },
+	} {
+		e = validEnv()
+		set(e)
+		if ps := problems(t, e); !hasProblem(ps, "must be https outside dev") {
+			t.Errorf("http media base outside dev must be refused, got %v", ps)
+		}
+	}
+
+	e = validEnv()
+	e.Server.Env = EnvDev
+	e.Media.BaseURL = "http://localhost:3310"
+	if ps := problems(t, e); hasProblem(ps, "https") {
+		t.Errorf("dev accepts http, got %v", ps)
+	}
+}

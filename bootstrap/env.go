@@ -506,7 +506,7 @@ func (e *Env) Validate() (warnings []string, err error) {
 	e.validateRedisTimeouts(fail, warn)
 	e.validateCORS(fail)
 	e.validatePortalKeys(strict, fail, warn)
-	e.validateFile(fail)
+	e.validateFile(strict, fail, warn)
 	e.validateInvalidation(strict, fail, warn)
 
 	if strict && len(e.Server.TrustedProxies) == 0 {
@@ -587,8 +587,12 @@ func (e *Env) validatePortalKeys(strict bool, fail, warn func(string, ...any)) {
 	}
 }
 
-// validateFile: media.baseUrl and file.path_ip are optional; when set each must be an http(s) URL with a host.
-func (e *Env) validateFile(fail func(string, ...any)) {
+// validateFile: media.baseUrl and file.path_ip are optional; when set each must be an http(s) URL with a host,
+// and outside dev an https one (an http image on an https site is blocked by the browser as mixed content).
+// When both are blank the file-service media URLs cannot be built: the media map of a page stays empty
+// without any error, so the start warns (the media.baseUrl env is MEDIA_BASE_URL, the admin backend's
+// counterpart is file.path_ip).
+func (e *Env) validateFile(strict bool, fail, warn func(string, ...any)) {
 	for _, c := range []struct{ key, val string }{{"media.baseUrl", e.Media.BaseURL}, {"file.path_ip", e.File.PathIP}} {
 		if strings.TrimSpace(c.val) == "" {
 			continue
@@ -596,7 +600,14 @@ func (e *Env) validateFile(fail func(string, ...any)) {
 		u, err := url.Parse(strings.TrimSpace(c.val))
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			fail("%s: must be an http(s) URL with a host", c.key)
+			continue
 		}
+		if strict && u.Scheme != "https" {
+			fail("%s: must be https outside dev (an http image on an https site is blocked as mixed content)", c.key)
+		}
+	}
+	if e.MediaBaseURL() == "" {
+		warn("media.baseUrl and file.path_ip are both blank: media files of the file service get no URL and pages show no images; set MEDIA_BASE_URL to the public https origin of the file service")
 	}
 }
 

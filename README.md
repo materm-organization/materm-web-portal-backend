@@ -104,8 +104,8 @@ Keys that are **not** in the template are registered with defaults in code and c
 | `server.corsOrigins` | `[]` | allowed browser origins; blank = no CORS answer at all (never `*`) |
 | `server.trustedProxies`, `server.proxyHeader` | `[]`, blank | where the connection's client IP comes from |
 | `portal.frontendKeys` | `[]` | accepted `X-Portal-Key` values, at most 2 (rotation), >= 32 printable ASCII bytes each; env `PORTAL_FRONTENDKEYS` (comma separated), never in the repo. Required outside dev; blank in dev refuses every `/api/v1` request |
-| `media.baseUrl` | blank | env `MEDIA_BASE_URL`. Public base URL put in front of the stored `storage_key` to answer an absolute media URL (`<baseUrl>/<storage_key>`). Configuration only, never stored in the database. Blank = falls back to `file.path_ip` |
-| `file.path_ip` | blank | older name of the same base URL (used only when `media.baseUrl` is blank) |
+| `media.baseUrl` | blank | env `MEDIA_BASE_URL`. Public base URL put in front of the stored `storage_key` to answer an absolute media URL (`<baseUrl>/<storage_key>`). Configuration only, never stored in the database. Blank = falls back to `file.path_ip`; both blank = the start warns and pages get no file-service images. Outside dev it must be `https://` (start refused otherwise: mixed content) |
+| `file.path_ip` | blank | older name of the same base URL (used only when `media.baseUrl` is blank; the same https rule applies) |
 | `media.staticPrefix` | `static/` | storage keys with this prefix are served by portal-frontend from `public/` |
 | `redis.dialTimeout`, `redis.readTimeout`, `redis.writeTimeout` | `200ms`, `300ms`, `300ms` | fast-fail limits of one Redis attempt (10ms to 5s). A Redis outage must cost milliseconds per request, never a timeout of the frontend's 2 s fetch (B1) |
 | `redis.maxRetries` | `0` | EXTRA attempts of a failed command (0 to 3; 0 = one attempt: go-redis's own default of 3 retries x 5 dials x 100 ms made one command on a dead Redis cost ~2 s) |
