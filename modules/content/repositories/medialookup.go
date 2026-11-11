@@ -25,8 +25,9 @@ func (m mediaLookup) AssetsByIDs(ctx context.Context, locale string, ids []int64
 func AssetSources(rows []entities.PublicAsset) []media.Source {
 	out := make([]media.Source, 0, len(rows))
 	for _, a := range rows {
+		bytes := a.Bytes
 		out = append(out, media.Source{
-			ID: a.AssetID, StorageKey: a.StorageKey, Mime: a.MimeType, Width: a.Width, Height: a.Height,
+			ID: a.AssetID, StorageKey: a.StorageKey, Kind: a.Kind, DurationMS: a.DurationMS, Bytes: &bytes, Mime: a.MimeType, Width: a.Width, Height: a.Height,
 			FocalX: a.FocalX, FocalY: a.FocalY, Blurhash: a.Blurhash, DominantColor: a.DominantColor,
 			Alt: a.Alt, Caption: a.Caption, Credit: a.Credit, Variants: a.Variants.Bytes(),
 		})

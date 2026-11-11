@@ -26,6 +26,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -269,7 +270,9 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 	data := &PageData{Locale: in.Locale, Sections: []Section{}}
 	mediaIDs := map[int64]struct{}{}
 	var firstHero int64
+	elsewhere := map[int64]struct{}{} // media ids that do not sit in a slot of a section's props (resolved data, SEO image)
 	for _, s := range secs {
+		tr.section = s.idx
 		props, _ := tr.apply(s.spec.plan, s.collapsed).(map[string]any)
 		if props == nil {
 			props = map[string]any{}
@@ -309,6 +312,7 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 		if rdec, derr := localize.DecodeObject(rb); derr == nil {
 			for _, id := range media.CollectIDs(rdec) {
 				mediaIDs[id] = struct{}{}
+				elsewhere[id] = struct{}{}
 			}
 		}
 		data.Sections = append(data.Sections, Section{
@@ -360,6 +364,18 @@ func (a *Assembler) Page(ctx context.Context, in PageInput) (*PageResult, error)
 	m, err := a.d.Media.Resolve(ctx, a.d.MediaLookup, in.Locale, sortedIDs(mediaIDs))
 	if err != nil {
 		return nil, err
+	}
+	dropped := a.dropWrongKinds(in, m, tr.slots, elsewhere)
+	if o := data.Page.SEO.OGImage; o != nil {
+		// a video is never the social image (the admin refuses it at publish; defensive for an old or previewed draft)
+		if it, ok := m[strconv.FormatInt(o.MediaID, 10)]; ok && it.Kind == mediaKindVideo {
+			data.Page.SEO.OGImage = nil
+			if _, inSlot := dropped[o.MediaID]; !inSlot && !usedAsVideo(tr.slots, o.MediaID) {
+				if _, other := elsewhere[o.MediaID]; !other {
+					delete(m, strconv.FormatInt(o.MediaID, 10))
+				}
+			}
+		}
 	}
 	data.Media = m
 	return &PageResult{Data: data, Tags: e.tags.list()}, nil
@@ -458,3 +474,71 @@ func (t *tagSet) add(tags ...string) {
 }
 
 func (t *tagSet) list() []string { return append([]string(nil), t.order...) }
+
+// mediaKindVideo is media_assets.kind (and the Item.Kind) of a video.
+const mediaKindVideo = "video"
+
+func usedAsVideo(slots []slotUse, id int64) bool {
+	for _, s := range slots {
+		if s.id == id && s.video {
+			return true
+		}
+	}
+	return false
+}
+
+// dropWrongKinds is the defensive half of the media kind rule (the admin refuses a wrong kind at save and publish; an old draft, a
+// preview or a row written by hand can still hold one): an asset that sits ONLY in slots of the wrong kind (a video in an image
+// placement, an image or other file in a background_video) is left out of the media map, so the component shows its fallback (colour
+// fill / the poster) instead of an <img> with a video URL or a <video> with a picture; the page is never failed for it. In preview the
+// editor gets the warning media_kind_mismatch at the section; the public page logs it, throttled. An asset that is also used correctly (another
+// slot, resolved data) stays. It returns the ids it dropped.
+func (a *Assembler) dropWrongKinds(in PageInput, m media.Map, slots []slotUse, elsewhere map[int64]struct{}) map[int64]struct{} {
+	dropped := map[int64]struct{}{}
+	type usage struct{ good, bad bool }
+	use := map[int64]*usage{}
+	for _, s := range slots {
+		it, ok := m[strconv.FormatInt(s.id, 10)]
+		if !ok {
+			continue
+		}
+		u := use[s.id]
+		if u == nil {
+			u = &usage{}
+			use[s.id] = u
+		}
+		if (it.Kind == mediaKindVideo) == s.video {
+			u.good = true
+			continue
+		}
+		u.bad = true
+		in.Warnings.add(WarnMediaKindMismatch, sectionPath(s.section), "media %d is a %s but its place takes a %s", s.id, kindOrUnknown(it.Kind), slotKind(s.video))
+		logs.WarnEvery(fmt.Sprintf("assemble.media_kind.%d", s.id), time.Minute, "assemble: media of the wrong kind in a slot",
+			logs.String("event", "media_kind_mismatch"), logs.Int("media_id", int(s.id)), logs.String("kind", it.Kind), logs.String("slot", slotKind(s.video)))
+	}
+	for id, u := range use {
+		if !u.bad || u.good {
+			continue
+		}
+		if _, other := elsewhere[id]; other {
+			continue
+		}
+		delete(m, strconv.FormatInt(id, 10))
+		dropped[id] = struct{}{}
+	}
+	return dropped
+}
+
+func kindOrUnknown(k string) string {
+	if k == "" {
+		return "file of unknown kind"
+	}
+	return k
+}
+
+func slotKind(video bool) string {
+	if video {
+		return "video"
+	}
+	return "picture"
+}

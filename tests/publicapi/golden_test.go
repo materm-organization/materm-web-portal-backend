@@ -20,7 +20,7 @@ func pageMask(path string) bool {
 	return strings.HasPrefix(path, ".data.sections[") && strings.HasSuffix(path, "].id")
 }
 
-var mediaOpts = jsondiff.Options{Tolerated: map[string]bool{"caption": true, "credit": true, "dominant_color": true}, TolerateUnder: ".data.media."}
+var mediaOpts = jsondiff.Options{Tolerated: map[string]bool{"caption": true, "credit": true, "dominant_color": true, "kind": true, "duration_ms": true, "bytes": true}, TolerateUnder: ".data.media."}
 
 // TestEndpointsEqualTheFrontendBundle serves the raw seed through the real services, controllers, pipeline
 // and portal key, and compares every body with the bundle the frontend was built against

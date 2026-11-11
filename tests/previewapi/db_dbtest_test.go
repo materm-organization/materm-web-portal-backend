@@ -422,3 +422,74 @@ func TestDBPreviewSharedSectionNeverPublished(t *testing.T) {
 		t.Errorf("warnings %v, want %s", got, want)
 	}
 }
+
+// A DRAFT hero in a preview snapshot with a background_video resolves like a published one (the video item sits in data.media with kind,
+// mime and duration), a video that is not ready is simply absent, and a video placed in the image slot is left out with the warning
+// media_kind_mismatch at its section.
+func TestDBPreviewHeroBackgroundVideo(t *testing.T) {
+	e := dbSetup(t)
+	st := e.stack(t)
+	var vid, pending, poster int64
+	if err := e.s.Owner.QueryRow(`insert into media_assets (kind, status, storage_key, original_filename, mime_type, bytes, width, height, duration_ms)
+		values ('video', 'ready', 'static/videos/prev-loop.mp4', 'prev-loop.mp4', 'video/mp4', 3000000, 1280, 720, 8000) returning id`).Scan(&vid); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.Owner.QueryRow(`insert into media_assets (kind, status, storage_key, original_filename, mime_type, bytes)
+		values ('video', 'uploading', 'static/videos/prev-pending.mp4', 'prev-pending.mp4', 'video/mp4', 1) returning id`).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.Owner.QueryRow(`select id from media_assets where storage_key = 'static/images/site/home/hero-bg.png'`).Scan(&poster); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.exec(t, `delete from media_assets where id in ($1, $2)`, vid, pending) })
+
+	hero := func(props map[string]any) []byte {
+		b, err := json.Marshal(map[string]any{
+			"page":         map[string]any{"path": "/draft-video", "name": "Draft video", "template": "standard"},
+			"translations": []any{map[string]any{"locale_code": "la", "title": "Draft video", "is_enabled": true}},
+			"sections":     []any{map[string]any{"id": 1, "public_id": "0192e1f0-3c2a-7d11-8b5e-6a0c1d2e3f01", "section_type": "hero_brand", "section_version": 1, "sort_order": 1, "is_visible": true, "props": props}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	img := map[string]any{"media_id": poster, "decorative": true}
+	resolve := func(seed string, props map[string]any) (map[string]any, []string) {
+		tok, _ := e.issueSnapshot(t, seed, "cms.pages", e.home, "", time.Hour, string(hero(props)))
+		r := st.resolve(t, tok, "?locale=la")
+		if r.Status != http.StatusOK {
+			t.Fatalf("%s: %d %s", seed, r.Status, r.Body)
+		}
+		var codes []string
+		for _, w := range r.Data()["preview"].(map[string]any)["warnings"].([]any) {
+			m := w.(map[string]any)
+			codes = append(codes, m["code"].(string)+"@"+m["path"].(string))
+		}
+		return r.Data()["page"].(map[string]any)["media"].(map[string]any), codes
+	}
+
+	m, warns := resolve("pv-ok", map[string]any{"title": map[string]any{"la": "T"}, "background": img, "background_video": map[string]any{"media_id": vid}})
+	v, _ := m[strconv.FormatInt(vid, 10)].(map[string]any)
+	if v == nil || v["kind"] != "video" || v["mime"] != "video/mp4" || v["duration_ms"].(float64) != 8000 || v["url"] != "/videos/prev-loop.mp4" {
+		t.Errorf("draft video item: %v (warnings %v)", v, warns)
+	}
+	if m[strconv.FormatInt(poster, 10)] == nil {
+		t.Errorf("the poster item is missing: %v", m)
+	}
+	for _, w := range warns {
+		if strings.HasPrefix(w, "media_kind_mismatch") {
+			t.Errorf("unexpected warning %s", w)
+		}
+	}
+
+	m, _ = resolve("pv-pending", map[string]any{"title": map[string]any{"la": "T"}, "background": img, "background_video": map[string]any{"media_id": pending}})
+	if m[strconv.FormatInt(pending, 10)] != nil {
+		t.Errorf("a video that is not ready must not appear: %v", m)
+	}
+
+	m, warns = resolve("pv-wrong", map[string]any{"title": map[string]any{"la": "T"}, "background": map[string]any{"media_id": vid, "decorative": true}})
+	if m[strconv.FormatInt(vid, 10)] != nil || !contains(warns, "media_kind_mismatch@/sections/0") {
+		t.Errorf("a video in the image slot: media %v, warnings %v", m, warns)
+	}
+}

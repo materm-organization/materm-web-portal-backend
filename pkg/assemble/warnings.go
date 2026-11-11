@@ -14,6 +14,9 @@ const (
 	// WarnSectionTypeUnknown: the section type@version is not in the registry (or its props are unusable): the
 	// section is left out, as on the public page.
 	WarnSectionTypeUnknown = "section_type_unknown"
+	// WarnMediaKindMismatch: a video asset sits in an image slot, or a non-video asset in a video slot (background_video). The asset is left
+	// out of data.media, so the component shows its fallback (the colour fill, or the poster image) instead of a broken element.
+	WarnMediaKindMismatch = "media_kind_mismatch"
 	// WarnSharedSectionUnavailable: the section uses a shared section that is not published, so its content
 	// cannot be shown: the section is left out.
 	WarnSharedSectionUnavailable = "shared_section_unavailable"

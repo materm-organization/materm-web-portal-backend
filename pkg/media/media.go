@@ -121,12 +121,19 @@ type Item struct {
 	DominantColor *string   `json:"dominant_color"`
 	Focal         *Focal    `json:"focal"`
 	Variants      []Variant `json:"variants"`
+	// Kind is the asset kind ("image", "video", ...); DurationMS is set for a video; Bytes is the file size. Absent from the JSON when unknown.
+	Kind       string `json:"kind,omitempty"`
+	DurationMS *int   `json:"duration_ms,omitempty"`
+	Bytes      *int64 `json:"bytes,omitempty"`
 }
 
 // Source is the input of Item: the columns of v_public_assets as plain values (a nil pointer = NULL).
 type Source struct {
 	ID            int64
 	StorageKey    string
+	Kind          string
+	DurationMS    *int
+	Bytes         *int64
 	Mime          string
 	Width         *int
 	Height        *int
@@ -159,6 +166,10 @@ func (b *Builder) Item(s Source) (Item, bool) {
 	}
 	it := Item{URL: u, Width: s.Width, Height: s.Height, Alt: s.Alt, Caption: s.Caption, Credit: s.Credit,
 		Blurhash: s.Blurhash, DominantColor: s.DominantColor, Variants: []Variant{}}
+	it.Kind, it.DurationMS = s.Kind, s.DurationMS
+	if s.Bytes != nil && *s.Bytes > 0 {
+		it.Bytes = s.Bytes
+	}
 	if s.Mime != "" {
 		m := s.Mime
 		it.Mime = &m

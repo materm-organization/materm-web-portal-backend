@@ -373,6 +373,8 @@ type PublicAsset struct {
 	Caption         *string  `gorm:"column:caption"`
 	Credit          *string  `gorm:"column:credit"`
 	Variants        JSONB    `gorm:"column:variants"`
+	// DurationMS is the length of a video in milliseconds (NULL for every other kind); appended to the view by release 1 of video support.
+	DurationMS *int `gorm:"column:duration_ms"`
 }
 
 func (PublicAsset) TableName() string { return "v_public_assets" }

@@ -29,6 +29,8 @@ type node struct {
 	profile richtext.Profile // kRich
 	props   map[string]*node // kObject
 	items   *node            // kArray
+	// video is the x-media-kind "video" annotation of a kMedia node: the id must be a video asset (every other media slot takes anything but a video).
+	video bool
 }
 
 const (
@@ -89,7 +91,8 @@ func compile(schema, root map[string]any, depth int) (*node, error) {
 		return n, nil
 	}
 	if ref, _ := s["x-ref"].(string); ref == "media_assets" {
-		return &node{kind: kMedia}, nil
+		k, _ := s["x-media-kind"].(string)
+		return &node{kind: kMedia, video: k == "video"}, nil
 	}
 	return &node{kind: kPlain}, nil
 }

@@ -176,3 +176,22 @@ func decodeAny(s string) (any, error) {
 	err := dec.Decode(&v)
 	return v, err
 }
+
+func TestItemCarriesKindDurationAndBytes(t *testing.T) {
+	b := NewBuilder(Config{PathIP: "https://files.example.com"})
+	d, size := 12500, int64(4200000)
+	v, ok := b.Item(Source{ID: 7, StorageKey: "uploads/loop.mp4", Kind: "video", Mime: "video/mp4", DurationMS: &d, Bytes: &size})
+	if !ok || v.Kind != "video" || v.DurationMS == nil || *v.DurationMS != 12500 || v.Bytes == nil || *v.Bytes != 4200000 {
+		t.Fatalf("video item %+v", v)
+	}
+	raw, _ := json.Marshal(v)
+	if !strings.Contains(string(raw), `"kind":"video"`) || !strings.Contains(string(raw), `"duration_ms":12500`) || !strings.Contains(string(raw), `"bytes":4200000`) {
+		t.Errorf("json %s", raw)
+	}
+	zero := int64(0)
+	img, _ := b.Item(Source{ID: 8, StorageKey: "uploads/a.webp", Kind: "image", Mime: "image/webp", Bytes: &zero})
+	raw, _ = json.Marshal(img)
+	if strings.Contains(string(raw), "duration_ms") || strings.Contains(string(raw), `"bytes"`) || !strings.Contains(string(raw), `"kind":"image"`) {
+		t.Errorf("an image omits duration_ms and an empty size: %s", raw)
+	}
+}

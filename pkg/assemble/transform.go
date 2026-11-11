@@ -20,8 +20,18 @@ type transformer struct {
 	pageIDs    map[int64]struct{}
 	postIDs    map[int64]struct{}
 	media      map[int64]struct{}
-	pages      map[int64]string // page id -> path of a published page
-	resolver   richtext.Resolver
+	// section is the index of the section being applied (/sections/<idx> of a warning); slots records every media id with the kind of slot it sits in.
+	section  int
+	slots    []slotUse
+	pages    map[int64]string // page id -> path of a published page
+	resolver richtext.Resolver
+}
+
+// slotUse is one media id found at a media slot of a section: video says the slot is annotated x-media-kind "video".
+type slotUse struct {
+	id      int64
+	video   bool
+	section int
 }
 
 func newTransformer() *transformer {
@@ -43,6 +53,7 @@ func (t *transformer) apply(n *node, v any) any {
 	case kMedia:
 		if id, ok := asID(v); ok {
 			t.media[id] = struct{}{}
+			t.slots = append(t.slots, slotUse{id: id, video: n.video, section: t.section})
 		}
 		return v
 	case kArray:
@@ -97,6 +108,7 @@ func (t *transformer) image(v any) any {
 	}
 	if id, ok := asID(m["media_id"]); ok {
 		t.media[id] = struct{}{}
+		t.slots = append(t.slots, slotUse{id: id, section: t.section})
 	}
 	return map[string]any{"media_id": m["media_id"], "alt": alt, "decorative": decorative}
 }

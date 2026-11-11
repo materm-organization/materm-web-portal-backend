@@ -59,7 +59,7 @@ func TestSeededPagesEqualTheFrontendBundle(t *testing.T) {
 			"run the admin Seed on it", schemadb.EnvSeededDSN, sections, mediaRows)
 	}
 
-	opts := jsondiff.Options{Mask: pageMask, Tolerated: map[string]bool{"caption": true, "credit": true, "dominant_color": true},
+	opts := jsondiff.Options{Mask: pageMask, Tolerated: map[string]bool{"caption": true, "credit": true, "dominant_color": true, "kind": true, "duration_ms": true, "bytes": true},
 		TolerateUnder: ".data.media.", Extras: map[string]bool{}}
 	for _, loc := range []string{"la", "en"} {
 		for _, key := range seedfake.PageKeys {

@@ -59,6 +59,9 @@
         "$ref": "#/$defs/image",
         "title": "Background photo"
       },
+      "background_video": {
+        "$ref": "#/$defs/video"
+      },
       "show_logo": {
         "type": "boolean",
         "default": true,
@@ -136,6 +139,21 @@
           "decorative": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "video": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "media_id"
+        ],
+        "properties": {
+          "media_id": {
+            "type": "integer",
+            "minimum": 1,
+            "x-ref": "media_assets",
+            "x-media-kind": "video"
           }
         }
       },

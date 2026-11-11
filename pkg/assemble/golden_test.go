@@ -34,7 +34,7 @@ func TestGoldenPagesEqualTheFrontendBundle(t *testing.T) {
 	db := seedfake.Load(t)
 	set := db.Set()
 	a := assemblerOver(set)
-	opts := jsondiff.Options{Mask: pageMask, Tolerated: map[string]bool{"caption": true, "credit": true, "dominant_color": true},
+	opts := jsondiff.Options{Mask: pageMask, Tolerated: map[string]bool{"caption": true, "credit": true, "dominant_color": true, "kind": true, "duration_ms": true, "bytes": true},
 		TolerateUnder: ".media.", Extras: map[string]bool{}}
 	ctx := context.Background()
 	for _, loc := range []string{"la", "en"} {

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/materm-organization/materm-web-portal-backend/modules/content/entities"
+	"github.com/materm-organization/materm-web-portal-backend/pkg/media"
 	"github.com/materm-organization/materm-web-portal-backend/pkg/testutil/seedfake"
 )
 
@@ -366,5 +368,69 @@ func TestLinkTargetsBatchPagesAndPosts(t *testing.T) {
 	}
 	if h.a.Registry() == nil {
 		t.Error("registry")
+	}
+}
+
+// The media kind rule of the assembler: an asset that sits only in slots of the wrong kind is dropped from the map (with the warning), one that
+// is also used correctly stays, and the schema marks the video node.
+func TestDropWrongKinds(t *testing.T) {
+	a := &Assembler{}
+	mk := func() media.Map {
+		return media.Map{"1": {Kind: "video"}, "2": {Kind: "image"}, "3": {Kind: "video"}, "4": {Kind: "image"}}
+	}
+	w := &Warnings{}
+	m := mk()
+	slots := []slotUse{
+		{id: 1, video: false, section: 0}, // a video in an image slot: dropped
+		{id: 2, video: true, section: 0},  // a picture in the video slot: dropped
+		{id: 3, video: true, section: 1},  // fine
+		{id: 4, video: false, section: 1}, // fine
+	}
+	dropped := a.dropWrongKinds(PageInput{Warnings: w}, m, slots, map[int64]struct{}{})
+	if _, ok := m["1"]; ok || len(dropped) != 2 || m["3"].Kind != "video" || m["4"].Kind != "image" {
+		t.Errorf("map %v dropped %v", m, dropped)
+	}
+	if _, ok := m["2"]; ok {
+		t.Errorf("a picture in the video slot stays: %v", m)
+	}
+	if got := w.List(); len(got) != 2 || got[0].Code != WarnMediaKindMismatch || got[0].Path != "/sections/0" {
+		t.Errorf("warnings %v", got)
+	}
+	// used correctly somewhere else too: stays
+	m = mk()
+	a.dropWrongKinds(PageInput{}, m, []slotUse{{id: 1, video: false}, {id: 1, video: true}}, map[int64]struct{}{})
+	if _, ok := m["1"]; !ok {
+		t.Error("an asset that is also used in a video slot stays")
+	}
+	m = mk()
+	a.dropWrongKinds(PageInput{}, m, []slotUse{{id: 1, video: false}}, map[int64]struct{}{1: {}})
+	if _, ok := m["1"]; !ok {
+		t.Error("an asset that resolved data uses stays")
+	}
+}
+
+func TestSchemaMarksTheVideoNode(t *testing.T) {
+	var schema map[string]any
+	raw, err := os.ReadFile("schemas/hero_brand.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		JSONSchema map[string]any `json:"json_schema"`
+	}
+	if err = json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	schema = doc.JSONSchema
+	n, err := compileSchema(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bv := n.props["background_video"]
+	if bv == nil || bv.kind != kObject || bv.props["media_id"] == nil || bv.props["media_id"].kind != kMedia || !bv.props["media_id"].video {
+		t.Fatalf("background_video node: %+v", bv)
+	}
+	if n.props["background"].kind != kImage {
+		t.Errorf("background stays an image placement")
 	}
 }
